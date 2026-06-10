@@ -1,4 +1,7 @@
 <script setup>
+import { ref, computed, watch, onMounted } from 'vue'
+import MesaDados from '../components/MesaDados.vue'
+
 const route = useRoute()
 const router = useRouter()
 const supabase = useSupabaseClient()
@@ -11,10 +14,9 @@ const listaPerfiles = ref([])
 const filtroAtaques = ref('')
 const filtroInventario = ref('')
 
-// EL REGISTRO DE LA MESA DE DADOS
-const historialDados = ref([])
+// Referencia a nuestro nuevo componente de dados
+const mesaRef = ref(null)
 
-// Estructura maestra del personaje
 const pj = ref({
   nombre_pj: '', raza: '', clase: '', nivel: 1, player_email: '', campaign_id: route.query.campana || null,
   imagen_url: '', alineamiento: '', xp: 0, 
@@ -53,7 +55,6 @@ const inventarioFiltrado = computed(() => {
   return pj.value.inventario.filter(i => i.nombre.toLowerCase().includes(f) || i.nota.toLowerCase().includes(f))
 })
 
-// Funciones Matemáticas
 const calcMod = (valor) => Math.floor((valor - 10) / 2)
 const calcModStr = (valor) => { const m = calcMod(valor); return m >= 0 ? `+${m}` : m }
 const calcHabilidadNum = (statBase, isProf) => calcMod(pj.value[statBase]) + (isProf ? 3 : 0)
@@ -77,51 +78,26 @@ const reiniciarMuerte = () => {
 }
 
 // ==========================================
-// MOTOR DE FÍSICAS: LA MESA DE DADOS
+// CANCELAR EDICIÓN
 // ==========================================
-const lanzarDados = (titulo, cantidad, caras, bono) => {
-  if (modoEdicion.value) return // No tirar dados si estamos editando la ficha
-
-  let suma = 0
-  let resultados = []
-  
-  for(let i = 0; i < cantidad; i++) {
-    const d = Math.floor(Math.random() * caras) + 1
-    resultados.push(d)
-    suma += d
-  }
-  
-  const b = parseInt(bono) || 0
-  const total = suma + b
-
-  // Agregamos la tirada al principio del historial
-  historialDados.value.unshift({
-    id: Date.now(),
-    titulo: titulo,
-    caras: caras,
-    dadosStr: `[${resultados.join(', ')}]`,
-    bonoStr: b >= 0 ? `+${b}` : `${b}`,
-    total: total,
-    critico: (caras === 20 && resultados[0] === 20),
-    pifia: (caras === 20 && resultados[0] === 1)
-  })
-
-  // Mantenemos solo las últimas 6 tiradas para no saturar la pantalla
-  if (historialDados.value.length > 6) {
-    historialDados.value.pop()
+const cancelarEdicion = () => {
+  if (esNuevo.value) {
+    router.back() // Si era nuevo y cancela, vuelve a la pantalla anterior
+  } else {
+    cargarFicha() // Recarga los datos desde la BD para borrar los cambios no guardados
+    modoEdicion.value = false
   }
 }
 
-// Disparadores específicos
-const tirarAtaqueHit = (atk) => lanzarDados(`Atacar: ${atk.nombre}`, 1, 20, atk.bono)
-const tirarAtaqueDano = (atk) => lanzarDados(`Daño: ${atk.nombre}`, atk.cant_dados || 1, atk.tipo_dado || 8, atk.bono_dano)
-const tirarEstadistica = (nombre, statBase) => lanzarDados(`Prueba de ${nombre}`, 1, 20, calcMod(pj.value[statBase]))
-const tirarHabilidad = (nombre, statBase, isProf) => lanzarDados(nombre, 1, 20, calcHabilidadNum(statBase, isProf))
-
+// ==========================================
+// CONEXIÓN CON LA MESA DE DADOS (Componente Externo)
+// ==========================================
+const tirarAtaqueHit = (atk) => mesaRef.value?.tirar(`Ataque: ${atk.nombre}`, 1, 20, atk.bono)
+const tirarAtaqueDano = (atk) => mesaRef.value?.tirar(`Daño: ${atk.nombre}`, atk.cant_dados || 1, atk.tipo_dado || 8, atk.bono_dano)
+const tirarEstadistica = (nombre, statBase) => mesaRef.value?.tirar(`Prueba de ${nombre}`, 1, 20, calcMod(pj.value[statBase]))
+const tirarHabilidad = (nombre, statBase, isProf) => mesaRef.value?.tirar(nombre, 1, 20, calcHabilidadNum(statBase, isProf))
 
 const cargarFicha = async () => {
-  const { data: authData } = await supabase.auth.getSession()
-  
   const { data: perfilesData } = await supabase.from('profiles').select('email, nombre')
   if (perfilesData) listaPerfiles.value = perfilesData
 
@@ -130,10 +106,8 @@ const cargarFicha = async () => {
     if (data) {
       if (!data.inventario) data.inventario = []
       if (!data.ataques) data.ataques = []
-      
       let notasParseadas = []
       try { notasParseadas = data.notas ? JSON.parse(data.notas) : [] } catch { notasParseadas = [] }
-      
       pj.value = { ...data, notas_array: notasParseadas }
     }
   } else {
@@ -163,14 +137,12 @@ const guardarFicha = async () => {
     if (res.error) throw res.error
     modoEdicion.value = false
   } catch (err) {
-    console.error("Error al guardar:", err)
-    alert("Error al forjar cambios en la base de datos.")
+    alert("Error al forjar cambios.")
   } finally {
     cargando.value = false
   }
 }
 
-// El objeto inventario ahora incluye "equipado"
 const agregarAtaque = () => pj.value.ataques.push({ nombre: '', bono: 0, cant_dados: 1, tipo_dado: 8, bono_dano: 0, rango: '', desc: '' })
 const borrarAtaque = (index) => pj.value.ataques.splice(index, 1)
 const agregarItem = () => pj.value.inventario.push({ nombre: '', cant: 1, peso: '', nota: '', equipado: false })
@@ -185,12 +157,16 @@ onMounted(() => { cargarFicha() })
   <div class="pantalla-ficha">
     <div class="filtro-oscuro"></div>
 
+    <MesaDados ref="mesaRef" :jugador="pj.nombre_pj" />
+
     <div v-if="cargando" class="cargando">Abriendo grimorio...</div>
     
     <div v-else class="contenedor-principal">
       <div class="controles-superiores">
         <button @click="router.back()" class="btn-ghost">← Regresar</button>
         <div class="acciones-derecha">
+          <button v-if="modoEdicion" @click="cancelarEdicion" class="btn-rojo">✖ Cancelar</button>
+          
           <button v-if="!modoEdicion" @click="modoEdicion = true" class="btn-ghost">✏️ Editar Ficha</button>
           <button v-if="modoEdicion" @click="guardarFicha" class="btn-dorado">💾 Sellar Cambios</button>
         </div>
@@ -285,7 +261,7 @@ onMounted(() => { cargarFicha() })
               <span class="nombre-stat">{{ car.nombre }}</span>
             </div>
             
-            <div class="stat-mid" :class="{'interactivo': !modoEdicion}" @click="tirarEstadistica(car.nombre, car.id)">
+            <div class="stat-mid" :class="{'interactivo': !modoEdicion}" @click="!modoEdicion && tirarEstadistica(car.nombre, car.id)">
               <div class="modificador-gigante" :title="!modoEdicion ? 'Tirar Prueba de ' + car.nombre : ''">{{ calcModStr(pj[car.id]) }}</div>
               <div class="puntuacion-base">
                 <input v-if="modoEdicion" type="number" v-model="pj[car.id]" class="input-stat-chico" @click.stop />
@@ -348,7 +324,6 @@ onMounted(() => { cargarFicha() })
             <div class="header-seccion-busqueda">
               <h3 class="titulo-dorado">ATAQUES Y CONJUROS</h3>
               <div class="contenedor-filtro">
-                <i class="fa-solid fa-magnifying-glass icono-buscar"></i>
                 <input v-model="filtroAtaques" placeholder="Buscar ataque..." class="input-buscar-interno" />
               </div>
               <button v-if="modoEdicion" @click="agregarAtaque" class="btn-add">+ Añadir</button>
@@ -425,7 +400,6 @@ onMounted(() => { cargarFicha() })
 
                     <div class="inv-fila-nom pr-borrar">
                       <div class="inv-box flex-grow"><label>NOMBRE</label><input v-if="modoEdicion" v-model="item.nombre" placeholder="Objeto"/><span v-else class="texto-bold texto-wrap">{{ item.nombre || '-' }}</span></div>
-                      
                       <div class="check-equipado" title="Marcar como Equipado">
                         <input type="checkbox" v-model="item.equipado" :disabled="!modoEdicion" />
                         <label>Equipado</label>
@@ -455,25 +429,6 @@ onMounted(() => { cargarFicha() })
         </div>
       </div>
     </div>
-
-    <div class="mesa-dados-flotante" v-if="historialDados.length > 0">
-      <div class="mesa-header">
-        <span>🎲 Mesa de Dados</span>
-        <button class="btn-limpiar-mesa" @click="historialDados = []">X</button>
-      </div>
-      <div class="mesa-body">
-        <transition-group name="fade-roll">
-          <div v-for="tirada in historialDados" :key="tirada.id" class="tirada-item" :class="{'critico-ui': tirada.critico, 'pifia-ui': tirada.pifia}">
-            <div class="tirada-info">
-              <span class="tirada-tit">{{ tirada.titulo }}</span>
-              <span class="tirada-detalles">d{{ tirada.caras }}: {{ tirada.dadosStr }} | Bono: {{ tirada.bonoStr }}</span>
-            </div>
-            <div class="tirada-total">{{ tirada.total }}</div>
-          </div>
-        </transition-group>
-      </div>
-    </div>
-
   </div>
 </template>
 
@@ -506,6 +461,10 @@ input[type=number] {
 .punto-competencia.activo { color: #facc15; text-shadow: 0 0 5px rgba(251, 191, 36, 0.5); }
 .texto-competente { color: white !important; font-weight: 600; }
 
+/* DROPDOWN DE CORREOS */
+.selector-email-container { min-width: 220px; }
+.select-email-dark { background: #0f172a; border: 1px dashed #475569; color: #facc15; font-size: 0.85rem; padding: 0.2rem; border-radius: 4px; outline: none; width: 100%; cursor: pointer; }
+
 /* UTILIDADES */
 .mt-1 { margin-top: 0.25rem; } .ml-2 { margin-left: 0.5rem; } .mb-4 { margin-bottom: 1.5rem; } .flex-col { display: flex; flex-direction: column; } .w-full { width: 100%; } .flex-grow { flex-grow: 1; }
 .w-30 { width: 30px !important; }
@@ -522,7 +481,9 @@ input[type=number] {
 .btn-ghost:hover { background: #1e293b; color: white; }
 .btn-dorado { background: #b45309; color: white; border: 1px solid #d97706; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-weight: 600; }
 .btn-dorado:hover { background: #d97706; }
-.btn-add { background: transparent; border: 1px dashed #3b82f6; color: #3b82f6; padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; }
+.btn-rojo { background: transparent; color: #ef4444; border: 1px solid #ef4444; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-weight: 600; }
+.btn-rojo:hover { background: #ef4444; color: white; }
+.btn-add { background: transparent; border: 1px dashed #3b82f6; color: #3b82f6; padding: 0.2rem 0.5rem; border-radius: 4px; cursor: pointer; font-size: 0.75rem; flex-shrink: 0; }
 .btn-borrar-absoluto { position: absolute; top: 10px; right: 10px; background: rgba(127, 29, 29, 0.15); color: #f87171; border: 1px solid #7f1d1d; padding: 0.25rem 0.6rem; border-radius: 4px; font-size: 0.7rem; font-weight: bold; cursor: pointer; z-index: 5; }
 
 /* IDENTIDAD Y VITALIDAD */
@@ -539,8 +500,6 @@ input[type=number] {
 .tag label { display: block; font-size: 0.65rem; color: #64748b; font-weight: bold; letter-spacing: 1px; margin-bottom: 0.1rem; }
 .tag span, .tag input { font-size: 1rem; font-weight: 600; color: #e2e8f0; background: transparent; border: none; border-bottom: 1px dashed #334155; }
 .input-base { width: 80px; }
-.selector-email-container { min-width: 220px; }
-.select-email-dark { background: #0f172a; border: 1px dashed #475569; color: #facc15; font-size: 0.85rem; padding: 0.2rem; border-radius: 4px; outline: none; width: 100%; cursor: pointer; }
 
 .bloque-vitalidad { display: flex; gap: 1.5rem; border-left: 1px solid #1e293b; padding-left: 1.5rem; }
 .defensas { display: flex; flex-direction: column; gap: 0.8rem; }
@@ -633,27 +592,6 @@ textarea:focus { border-color: #3b82f6; }
 .check-equipado label { font-size: 0.6rem; color: #94a3b8; font-weight: bold; margin: 0; cursor: pointer; }
 .check-equipado input { cursor: pointer; accent-color: #3b82f6; }
 .item-inv.equipado { border-color: #3b82f6; background: rgba(59, 130, 246, 0.05); }
-
-/* MESA DE DADOS FLOTANTE */
-.mesa-dados-flotante { position: fixed; bottom: 20px; right: 20px; width: 320px; background: rgba(10, 10, 12, 0.95); backdrop-filter: blur(10px); border: 1px solid #3b82f6; border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 100; overflow: hidden; display: flex; flex-direction: column; }
-.mesa-header { background: #1e3a8a; color: white; font-weight: bold; font-family: 'Cinzel', serif; padding: 0.6rem 1rem; display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #3b82f6; }
-.btn-limpiar-mesa { background: transparent; border: none; color: #93c5fd; cursor: pointer; font-weight: bold; }
-.btn-limpiar-mesa:hover { color: white; }
-.mesa-body { padding: 0.5rem; max-height: 350px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.5rem; }
-
-.tirada-item { background: #111; border: 1px solid #334155; border-radius: 4px; padding: 0.5rem; display: flex; justify-content: space-between; align-items: center; border-left: 4px solid #475569; }
-.tirada-item.critico-ui { border-left-color: #facc15; background: rgba(250, 204, 21, 0.1); }
-.tirada-item.pifia-ui { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
-
-.tirada-info { display: flex; flex-direction: column; }
-.tirada-tit { font-weight: bold; color: white; font-size: 0.8rem; }
-.tirada-detalles { font-size: 0.65rem; color: #94a3b8; font-family: monospace; margin-top: 0.1rem; }
-.tirada-total { font-family: 'Cinzel', serif; font-size: 1.5rem; font-weight: bold; color: #facc15; }
-
-/* Animación de los dados al caer */
-.fade-roll-enter-active, .fade-roll-leave-active { transition: all 0.3s ease; }
-.fade-roll-enter-from { opacity: 0; transform: translateY(20px) scale(0.9); }
-.fade-roll-leave-to { opacity: 0; transform: translateX(30px); }
 
 /* FÍSICO Y NOTAS */
 .grilla-fisica { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0.5rem; }
