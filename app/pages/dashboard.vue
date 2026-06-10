@@ -207,7 +207,7 @@ onMounted(() => {
 .pantalla-taberna { 
   min-height: 100vh; 
   /* Imagen de alta calidad de una taberna clásica de madera */
-  background-image: url('https://images.unsplash.com/photo-1514362545857-3bc16c4c7d1b?q=80&w=1920&auto=format&fit=crop'); 
+  background-image: url('fondoTaberna.png'); 
   background-size: cover; 
   background-position: center; 
   background-attachment: fixed;
@@ -216,7 +216,7 @@ onMounted(() => {
   color: #e2e8f0; 
 }
 
-.filtro-oscuro { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 5, 14, 0.85); pointer-events: none; z-index: 0; }
+.filtro-oscuro { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(9, 5, 14, 0.631); pointer-events: none; z-index: 0; }
 .contenedor-principal { position: relative; z-index: 10; max-width: 1200px; margin: 0 auto; padding: 2rem; }
 .panel-glass { background: rgba(15, 23, 42, 0.7); backdrop-filter: blur(16px); border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 20px 40px rgba(0,0,0,0.7); border-radius: 12px; }
 
