@@ -1,3 +1,68 @@
+# Git - Guía rápida
+
+## Descargar los últimos cambios
+
+```bash
+git pull origin main
+```
+
+## Subir cambios
+
+1. Agregar archivos modificados:
+
+```bash
+git add .
+```
+
+2. Crear un commit:
+
+```bash
+git commit -m "Descripción de los cambios"
+```
+
+Ejemplo:
+
+```bash
+git commit -m "Se agregó pantalla de login"
+```
+
+3. Subir los cambios:
+
+```bash
+git push origin main
+```
+
+## Flujo de trabajo completo
+
+```bash
+git pull origin main
+git add .
+git commit -m "Descripción de los cambios"
+git push origin main
+```
+
+## Comandos útiles
+
+Ver estado del repositorio:
+
+```bash
+git status
+```
+
+Ver historial de commits:
+
+```bash
+git log --oneline
+```
+
+Ver rama actual:
+
+```bash
+git branch
+```
+
+
+
 # Nuxt Minimal Starter
 
 Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
