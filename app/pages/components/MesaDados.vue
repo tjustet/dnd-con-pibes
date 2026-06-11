@@ -1,265 +1,240 @@
 <script setup>
-import { ref, defineExpose } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+const supabase = useSupabaseClient()
 
 const props = defineProps({
-  jugador: { type: String, default: 'Héroe' }
+  jugador: String,
+  campanaId: [String, Number]
 })
 
-const abierto = ref(false)
-const expandido = ref(false)
+const panelAbierto = ref(false)
+const historialCompartido = ref([])
+let canalMesa = null
+
+// Motor 3D y variables de tiro
 const tirando = ref(false)
-const historial = ref([])
-const tiradaActual = ref(null)
-
-// El "Pool" manual de dados que el usuario va armando
-const poolSeleccionado = ref([])
-// Los dados que se están animando/mostrando en pantalla (ahora guardan {caras, valor})
 const dadosEnMesa = ref([])
+const resultadoFinal = ref(0)
+const poolManual = ref([])
+const bonoManual = ref(0)
 
-const cerrarMesa = () => {
-  expandido.value = false
+// Hacer scroll automático al último mensaje
+const historialRef = ref(null)
+const scrollearAbajo = () => {
+  nextTick(() => {
+    if (historialRef.value) historialRef.value.scrollTop = 0 // Como el array está invertido, el top es el más nuevo
+  })
 }
 
-// ----------------------------------------------------
-// LÓGICA 1: Tiradas desde la ficha de personaje
-// ----------------------------------------------------
-const tirar = (titulo, cantidad, caras, bono) => {
-  const cantNum = parseInt(cantidad) || 1
-  const carasNum = parseInt(caras) || 20
-  const bonoNum = parseInt(bono) || 0
+// 1. CARGA INICIAL Y WEBSOCKETS
+const conectarMesa = async () => {
+  if (!props.campanaId) return
 
-  // Armamos un arreglo con las caras pedidas (ej: si son 2d8, queda [8, 8])
-  const dadosPedir = Array(cantNum).fill(carasNum)
-  ejecutarTirada(titulo, dadosPedir, bonoNum)
+  // Traer historial actual
+  const { data } = await supabase.from('campaigns').select('historial_dados').eq('id', props.campanaId).single()
+  if (data && data.historial_dados) {
+    historialCompartido.value = data.historial_dados.filter(h => !h.oculto)
+  }
+
+  // Escuchar en tiempo real
+  canalMesa = supabase.channel('jugador_dados_' + props.jugador)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${props.campanaId}` }, (payload) => {
+      if (payload.new.historial_dados) {
+        historialCompartido.value = payload.new.historial_dados.filter(h => !h.oculto)
+        scrollearAbajo()
+      }
+    }).subscribe()
 }
 
-// ----------------------------------------------------
-// LÓGICA 2: Tiradas manuales desde el menú custom
-// ----------------------------------------------------
-const agregarDadoAlPool = (caras) => poolSeleccionado.value.push(caras)
-const limpiarPool = () => poolSeleccionado.value = []
+onMounted(() => {
+  if (props.campanaId) conectarMesa()
+})
 
-const tirarPoolManual = () => {
-  if (poolSeleccionado.value.length === 0) return
-  ejecutarTirada('Tirada Manual', [...poolSeleccionado.value], 0)
-  limpiarPool() // Limpiamos la mano después de tirar
-}
+onUnmounted(() => {
+  if (canalMesa) supabase.removeChannel(canalMesa)
+})
 
-// ----------------------------------------------------
-// MOTOR FÍSICO Y ANIMACIÓN CORE
-// ----------------------------------------------------
-const ejecutarTirada = (titulo, arrayDeCaras, bonoNum) => {
-  tiradaActual.value = { titulo, bono: bonoNum, total: 0 }
-  expandido.value = true
+// 2. MOTOR DE TIRADAS
+const ejecutarTirada = async (titulo, cantDados, caras, bonoNum, efecto_vinculado = null) => {
+  if (!props.campanaId) {
+    alert("Este personaje no está en ninguna campaña. No se pueden compartir los dados.")
+    return
+  }
+
+  panelAbierto.value = true
   tirando.value = true
+  resultadoFinal.value = 0
   
-  // Animación giratoria inicial
+  const arrayCaras = Array(cantDados).fill(caras)
+
+  // Animación 3D falsa
   const intervalo = setInterval(() => {
-    dadosEnMesa.value = arrayDeCaras.map(caras => ({
-      caras: caras,
-      valor: Math.floor(Math.random() * caras) + 1
-    }))
+    dadosEnMesa.value = arrayCaras.map(c => ({ caras: c, valor: Math.floor(Math.random() * c) + 1 }))
   }, 100)
 
-  // Detener y calcular resultado real
-  setTimeout(() => {
+  // Resultado final después de 1 segundo
+  setTimeout(async () => {
     clearInterval(intervalo)
-    
     let suma = 0
-    const resultadosFinales = arrayDeCaras.map(caras => {
-      const v = Math.floor(Math.random() * caras) + 1
+    dadosEnMesa.value = arrayCaras.map(c => {
+      const v = Math.floor(Math.random() * c) + 1
       suma += v
-      return { caras, valor: v }
+      return { caras: c, valor: v }
     })
     
-    dadosEnMesa.value = resultadosFinales
-    tiradaActual.value.total = suma + bonoNum
+    resultadoFinal.value = suma + bonoNum
     tirando.value = false
 
-    // Lógica para Críticos/Pifias (solo si es 1 solo d20)
-    const esCritico = (arrayDeCaras.length === 1 && arrayDeCaras[0] === 20 && resultadosFinales[0].valor === 20)
-    const esPifia = (arrayDeCaras.length === 1 && arrayDeCaras[0] === 20 && resultadosFinales[0].valor === 1)
-
-    historial.value.unshift({
+    const nuevaTirada = {
       id: Date.now(),
-      jugador: props.jugador || 'Desconocido',
+      tirador: props.jugador || 'Desconocido',
       titulo: titulo,
-      resumenDados: resultadosFinales.map(d => `d${d.caras}[${d.valor}]`).join(', '),
+      dadosStr: dadosEnMesa.value.map(d => `d${d.caras}[${d.valor}]`).join(', '),
       bono: bonoNum,
-      total: tiradaActual.value.total,
-      critico: esCritico,
-      pifia: esPifia
-    })
+      total: resultadoFinal.value,
+      oculto: false, // Los jugadores nunca tiran oculto
+      targetAsignado: '',
+      mostrarAsignador: false,
+      efecto_vinculado: efecto_vinculado
+    }
 
-    if(historial.value.length > 20) historial.value.pop()
-  }, 1500)
+    // Para evitar pisarse con otros, traemos el último historial justo antes de guardar
+    const { data } = await supabase.from('campaigns').select('historial_dados').eq('id', props.campanaId).single()
+    const histActual = data?.historial_dados || []
+    const nuevoHist = [nuevaTirada, ...histActual].slice(0, 30) // Guardamos 30 max
+
+    await supabase.from('campaigns').update({ historial_dados: nuevoHist }).eq('id', props.campanaId)
+
+  }, 1000)
 }
 
-// Exponemos la función antigua para que la hoja de PJ no se rompa
-defineExpose({ tirar })
+// 3. EXPORTAR PARA QUE LA FICHA LO USE
+defineExpose({
+  tirar: (titulo, cantDados, caras, bonoNum, efecto) => ejecutarTirada(titulo, cantDados, caras, bonoNum, efecto)
+})
+
+// Tiradas manuales desde el panel
+const agregarDadoManual = (caras) => poolManual.value.push(caras)
+const limpiarPool = () => { poolManual.value = []; bonoManual.value = 0; dadosEnMesa.value = []; resultadoFinal.value = 0 }
+const tirarManual = () => {
+  if (poolManual.value.length === 0) return
+  ejecutarTirada('Tirada Manual', poolManual.value.length, poolManual.value[0], parseInt(bonoManual.value) || 0)
+  poolManual.value = [] // Limpia después de tirar
+}
 </script>
 
 <template>
-  <div class="mesa-root">
-    
-    <div v-if="!expandido" class="fab-d20" @click="expandido = true" title="Abrir Mesa de Dados">
-      <img src="./dadoD20.png" alt="Dado" class="img-d20" />
-      <div v-if="!imgLoaded" class="fab-d20-fallback"></div> </div>
+  <div class="mesa-flotante-wrapper">
+    <button class="btn-abrir-mesa" @click="panelAbierto = !panelAbierto" :class="{'abierto': panelAbierto}">
+      🎲 Registro de Mesa
+    </button>
 
-    <Transition name="fade-mesa">
-      <div v-if="expandido" class="overlay-bg" @click.self="cerrarMesa">
-        <div class="mesa-contenedor">
-          <button class="btn-cerrar" @click="cerrarMesa" title="Minimizar">✖</button>
-
-          <div class="panel-historial">
-            <h3 class="titulo-historial">Historial de Tiradas</h3>
-            <div class="lista-historial">
-              <div v-for="item in historial" :key="item.id" class="item-historial" :class="{'crit-bg': item.critico, 'pif-bg': item.pifia}">
-                <div class="hist-header">
-                  <span class="hist-jugador">{{ item.jugador }}</span>
-                  <span class="hist-titulo">{{ item.titulo }}</span>
-                </div>
-                <div class="hist-body">
-                  <div class="hist-datos">
-                    <span>{{ item.resumenDados }}</span>
-                    <span class="hist-bono">Bono: {{ item.bono >= 0 ? '+' : '' }}{{ item.bono }}</span>
-                  </div>
-                  <div class="hist-total" :class="{'texto-crit': item.critico, 'texto-pif': item.pifia}">{{ item.total }}</div>
-                </div>
-              </div>
-              <p v-if="historial.length === 0" class="texto-vacio">El registro está vacío.</p>
-            </div>
+    <div class="panel-mesa-global" :class="{'activo': panelAbierto}">
+      
+      <div class="historial-zona" ref="historialRef">
+        <div v-for="h in historialCompartido" :key="h.id" class="hist-item" :class="{'mi-tirada': h.tirador === props.jugador}">
+          <div class="h-head">
+            <span class="h-quien">{{ h.tirador }}</span>
+            <span class="h-que">{{ h.titulo }}</span>
           </div>
+          <div class="h-dados">{{ h.dadosStr }}</div>
+          <div class="h-foot">
+            <span class="h-bono">Bono: {{ h.bono >= 0 ? '+' : '' }}{{ h.bono }}</span>
+            <span class="h-total">{{ h.total }}</span>
+          </div>
+        </div>
+        <div v-if="historialCompartido.length === 0" class="vacio">No hay tiradas todavía...</div>
+      </div>
 
-          <div class="panel-tirada">
-            <h2 class="titulo-tirada-actual">{{ tiradaActual?.titulo || 'Mesa Preparada' }}</h2>
-            
-            <div class="zona-dados">
-              <div v-for="(dado, idx) in dadosEnMesa" :key="idx" 
-                   class="dado-3d" 
-                   :class="{'animando-dado': tirando, ['dado-d'+dado.caras]: true}">
-                <span class="numero-dado">{{ dado.valor }}</span>
-              </div>
-            </div>
+      <div class="tapete-zona">
+        <div class="tapete-caida">
+          <div v-for="(d, idx) in dadosEnMesa" :key="idx" class="dado-3d" :class="{'girando': tirando, ['d'+d.caras]: true}">
+            {{ d.valor }}
+          </div>
+        </div>
+        <div v-if="!tirando && resultadoFinal > 0" class="resultado-grande">{{ resultadoFinal }}</div>
+      </div>
 
-            <Transition name="slide-up">
-              <div v-if="!tirando && tiradaActual && dadosEnMesa.length > 0" class="zona-resultados">
-                <div class="resultado-matematica">
-                  <span class="math-dados">{{ dadosEnMesa.map(d=>d.valor).join(' + ') }}</span>
-                  <span v-if="tiradaActual.bono != 0" class="math-bono">
-                    {{ tiradaActual.bono >= 0 ? '+' : '-' }} {{ Math.abs(tiradaActual.bono) }}
-                  </span>
-                </div>
-                <div class="resultado-gigante">{{ tiradaActual.total }}</div>
-              </div>
-            </Transition>
-
-            <div class="constructor-manual" :class="{'deshabilitado': tirando}">
-              <div class="botones-dados">
-                <button @click="agregarDadoAlPool(4)" class="btn-dado-add">d4</button>
-                <button @click="agregarDadoAlPool(6)" class="btn-dado-add">d6</button>
-                <button @click="agregarDadoAlPool(8)" class="btn-dado-add">d8</button>
-                <button @click="agregarDadoAlPool(10)" class="btn-dado-add">d10</button>
-                <button @click="agregarDadoAlPool(12)" class="btn-dado-add">d12</button>
-                <button @click="agregarDadoAlPool(20)" class="btn-dado-add d20-add">d20</button>
-                <button @click="agregarDadoAlPool(100)" class="btn-dado-add">d100</button>
-              </div>
-              
-              <div class="pool-visual">
-                <div class="pool-items">
-                  <span v-if="poolSeleccionado.length === 0" class="texto-gris">Seleccioná dados para armar la tirada...</span>
-                  <span v-for="(d, i) in poolSeleccionado" :key="i" class="badge-pool">d{{d}}</span>
-                </div>
-                <div class="pool-acciones" v-if="poolSeleccionado.length > 0">
-                  <button @click="limpiarPool" class="btn-limpiar">Limpiar</button>
-                  <button @click="tirarPoolManual" class="btn-tirar-pool">ROLL</button>
-                </div>
-              </div>
-            </div>
-
+      <div class="controles-zona">
+        <div class="botones-dados">
+          <button @click="agregarDadoManual(4)">d4</button>
+          <button @click="agregarDadoManual(6)">d6</button>
+          <button @click="agregarDadoManual(8)">d8</button>
+          <button @click="agregarDadoManual(10)">d10</button>
+          <button @click="agregarDadoManual(12)">d12</button>
+          <button @click="agregarDadoManual(20)" class="btn-d20">d20</button>
+        </div>
+        <div class="pool-accion">
+          <div class="pool-view">
+            <span v-if="poolManual.length === 0" class="txt-gris">Elige dados...</span>
+            <span v-for="(p, i) in poolManual" :key="i" class="badge-dado">d{{p}}</span>
+          </div>
+          <div class="inputs-final">
+            <input type="number" v-model="bonoManual" placeholder="+Bono" class="inp-bono" />
+            <button class="btn-clean" @click="limpiarPool">✖</button>
+            <button class="btn-roll" @click="tirarManual">TIRAR</button>
           </div>
         </div>
       </div>
-    </Transition>
+
+    </div>
   </div>
 </template>
 
 <style scoped>
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Inter:wght@400;600;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Inter:wght@400;600&display=swap');
+input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
-/* BOTÓN FLOTANTE (FAB) */
-.mesa-root { z-index: 9999; }
-.fab-d20 { position: fixed; bottom: 30px; right: 30px; width: 65px; height: 65px; background: #0f172a; border: 2px solid #3b82f6; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.8), 0 0 20px rgba(59,130,246,0.3); transition: transform 0.2s, box-shadow 0.2s; z-index: 10000; overflow: hidden; }
-.fab-d20:hover { transform: scale(1.1) rotate(15deg); box-shadow: 0 10px 25px rgba(0,0,0,0.9), 0 0 30px rgba(59,130,246,0.6); }
-.img-d20 { width: 100%; height: 100%; object-fit: cover; }
-.fab-d20-fallback { font-size: 2rem; position: absolute; } /* Por si falla la imagen */
+.mesa-flotante-wrapper { position: fixed; bottom: 20px; right: 20px; z-index: 9999; display: flex; flex-direction: column; align-items: flex-end; gap: 10px; font-family: 'Inter', sans-serif; }
 
-/* OVERLAY Y CONTENEDOR */
-.overlay-bg { position: fixed; inset: 0; background: rgba(5, 5, 5, 0.85); backdrop-filter: blur(8px); display: flex; align-items: center; justify-content: center; z-index: 9999; }
-.mesa-contenedor { width: 1050px; max-width: 95vw; height: 650px; max-height: 90vh; background: #0a0a0c; border: 2px solid #3b82f6; border-radius: 12px; display: flex; overflow: hidden; position: relative; box-shadow: 0 20px 50px rgba(0,0,0,0.8), inset 0 0 30px rgba(59,130,246,0.1); }
-.btn-cerrar { position: absolute; top: 15px; right: 20px; background: rgba(239, 68, 68, 0.2); color: #fca5a5; border: 1px solid #ef4444; width: 35px; height: 35px; border-radius: 50%; font-size: 1.2rem; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 10; transition: 0.2s; }
-.btn-cerrar:hover { background: #ef4444; color: white; transform: scale(1.1); }
+.btn-abrir-mesa { background: #1e3a8a; border: 2px solid #3b82f6; color: white; padding: 0.8rem 1.5rem; border-radius: 30px; font-family: 'Cinzel', serif; font-weight: bold; font-size: 1.1rem; cursor: pointer; box-shadow: 0 5px 15px rgba(0,0,0,0.5); transition: 0.3s; }
+.btn-abrir-mesa:hover { transform: translateY(-3px); box-shadow: 0 8px 20px rgba(59,130,246,0.4); }
+.btn-abrir-mesa.abierto { background: #0f172a; border-color: #475569; color: #94a3b8; }
 
-/* HISTORIAL */
-.panel-historial { width: 350px; background: #111; border-right: 2px solid #1e293b; display: flex; flex-direction: column; padding: 1.5rem; }
-.titulo-historial { color: #facc15; font-family: 'Cinzel', serif; font-size: 1.2rem; margin-top: 0; margin-bottom: 1.5rem; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; text-align: center; }
-.lista-historial { display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; padding-right: 0.5rem; flex-grow: 1; }
-.lista-historial::-webkit-scrollbar { width: 4px; } .lista-historial::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
-.item-historial { background: rgba(30, 41, 59, 0.5); border: 1px solid #334155; border-radius: 8px; padding: 0.8rem; border-left: 4px solid #3b82f6; }
-.item-historial.crit-bg { border-left-color: #facc15; background: rgba(250, 204, 21, 0.1); }
-.item-historial.pif-bg { border-left-color: #ef4444; background: rgba(239, 68, 68, 0.1); }
-.hist-header { display: flex; flex-direction: column; margin-bottom: 0.5rem; }
-.hist-jugador { font-size: 0.65rem; color: #94a3b8; font-weight: bold; text-transform: uppercase; }
-.hist-titulo { color: white; font-weight: bold; font-size: 0.9rem; }
-.hist-body { display: flex; justify-content: space-between; align-items: flex-end; }
-.hist-datos { display: flex; flex-direction: column; font-size: 0.7rem; color: #cbd5e1; font-family: monospace; }
-.hist-bono { color: #93c5fd; }
-.hist-total { font-family: 'Cinzel', serif; font-size: 2rem; color: #facc15; font-weight: bold; line-height: 1; text-shadow: 0 0 10px rgba(250,204,21,0.3); }
-.texto-crit { color: #facc15 !important; } .texto-pif { color: #fca5a5 !important; }
-.texto-vacio { font-style: italic; color: #475569; text-align: center; padding: 1rem; margin: 0; }
+.panel-mesa-global { width: 350px; background: #0a0a0c; border: 2px solid #3b82f6; border-radius: 12px; display: flex; flex-direction: column; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.8); max-height: 0; opacity: 0; transition: 0.3s cubic-bezier(0.4, 0, 0.2, 1); pointer-events: none; }
+.panel-mesa-global.activo { max-height: 700px; opacity: 1; pointer-events: auto; }
 
-/* PANEL TIRADA 3D */
-.panel-tirada { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; position: relative; padding: 2rem; background: radial-gradient(circle at center, #1e293b 0%, #0a0a0c 100%); padding-bottom: 150px; }
-.titulo-tirada-actual { position: absolute; top: 40px; font-family: 'Cinzel', serif; font-size: 2.5rem; color: white; text-align: center; text-shadow: 0 5px 15px rgba(0,0,0,0.8); margin: 0; width: 80%; }
-.zona-dados { display: flex; flex-wrap: wrap; justify-content: center; gap: 1.5rem; }
-.dado-3d { width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; color: white; font-size: 2.5rem; font-family: 'Inter', sans-serif; font-weight: 800; background: linear-gradient(135deg, #2563eb, #1e3a8a); box-shadow: inset 0 0 15px rgba(0,0,0,0.8), 0 10px 20px rgba(0,0,0,0.5); text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }
+/* Historial */
+.historial-zona { height: 250px; background: #111; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column-reverse; gap: 0.8rem; border-bottom: 2px solid #1e293b; }
+.historial-zona::-webkit-scrollbar { width: 4px; }
+.historial-zona::-webkit-scrollbar-thumb { background: #3b82f6; }
+.vacio { text-align: center; color: #475569; font-style: italic; font-size: 0.9rem; margin-top: 1rem; }
 
-.dado-d20, .dado-d12, .dado-d100, .dado-d10, .dado-d8 { clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); }
-.dado-d6 { border-radius: 12px; }
-.dado-d4 { clip-path: polygon(50% 0%, 0% 100%, 100% 100%); align-items: flex-end; padding-bottom: 10px; font-size: 2rem; }
+.hist-item { background: rgba(30, 41, 59, 0.5); border-left: 3px solid #64748b; padding: 0.6rem; border-radius: 6px; }
+.hist-item.mi-tirada { border-left-color: #facc15; background: rgba(250, 204, 21, 0.05); }
+.h-head { display: flex; justify-content: space-between; margin-bottom: 0.3rem; align-items: center; }
+.h-quien { font-size: 0.7rem; font-weight: bold; color: #cbd5e1; background: #1e293b; padding: 0.1rem 0.4rem; border-radius: 4px; }
+.mi-tirada .h-quien { color: #facc15; background: rgba(250,204,21,0.2); }
+.h-que { font-size: 0.8rem; color: #94a3b8; font-weight: bold; }
+.h-dados { font-family: monospace; color: #64748b; font-size: 0.8rem; margin-bottom: 0.4rem; }
+.h-foot { display: flex; justify-content: space-between; align-items: flex-end; }
+.h-bono { font-size: 0.75rem; color: #93c5fd; }
+.h-total { font-family: 'Cinzel', serif; font-size: 1.5rem; font-weight: bold; color: white; line-height: 1; }
 
-.animando-dado { animation: shake-roll 0.4s infinite linear, color-pulse 0.4s infinite alternate; }
-@keyframes shake-roll { 0% { transform: rotate(0deg) scale(1) translateY(0); } 25% { transform: rotate(25deg) scale(1.1) translateY(-15px); } 50% { transform: rotate(0deg) scale(1) translateY(0); } 75% { transform: rotate(-25deg) scale(1.1) translateY(15px); } 100% { transform: rotate(0deg) scale(1) translateY(0); } }
-@keyframes color-pulse { from { filter: brightness(1); } to { filter: brightness(1.5) drop-shadow(0 0 15px #3b82f6); } }
+/* Tapete 3D */
+.tapete-zona { position: relative; height: 180px; background: radial-gradient(circle at center, #1e293b, #050505); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.tapete-caida { display: flex; flex-wrap: wrap; gap: 0.8rem; justify-content: center; padding: 1rem; }
+.dado-3d { width: 50px; height: 50px; background: linear-gradient(135deg, #2563eb, #1e3a8a); color: white; display: flex; align-items: center; justify-content: center; font-family: 'Inter', sans-serif; font-size: 1.4rem; font-weight: bold; box-shadow: inset 0 0 10px rgba(0,0,0,0.8), 0 5px 10px rgba(0,0,0,0.6); }
+.d20, .d12, .d100, .d10, .d8 { clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); }
+.d6 { border-radius: 8px; }
+.d4 { clip-path: polygon(50% 0%, 0% 100%, 100% 100%); align-items: flex-end; padding-bottom: 5px; font-size: 1rem; }
+.girando { animation: shake 0.3s infinite linear; }
+@keyframes shake { 0% { transform: rotate(0deg) scale(1); } 25% { transform: rotate(25deg) scale(1.1); } 50% { transform: rotate(0deg) scale(1); } 75% { transform: rotate(-25deg) scale(1.1); } 100% { transform: rotate(0deg) scale(1); } }
+.resultado-grande { position: absolute; bottom: 10px; font-family: 'Cinzel', serif; font-size: 3rem; color: #facc15; font-weight: bold; text-shadow: 0 0 15px rgba(250,204,21,0.6); background: rgba(0,0,0,0.7); padding: 0 1rem; border-radius: 8px; border: 1px solid #334155; }
 
-/* RESULTADOS */
-.zona-resultados { display: flex; flex-direction: column; align-items: center; position: absolute; bottom: 160px; background: rgba(0,0,0,0.6); padding: 1.5rem 3rem; border-radius: 16px; border: 1px solid #334155; backdrop-filter: blur(5px); }
-.resultado-matematica { font-family: monospace; font-size: 1.5rem; color: #94a3b8; display: flex; gap: 1rem; align-items: center; margin-bottom: 0.5rem; }
-.math-dados { color: white; background: #1e293b; padding: 0.2rem 0.8rem; border-radius: 8px; }
-.math-bono { color: #fca5a5; font-weight: bold; }
-.resultado-gigante { font-family: 'Cinzel', serif; font-size: 6rem; font-weight: bold; color: #facc15; line-height: 1; text-shadow: 0 0 30px rgba(250,204,21,0.4); }
+/* Controles manuales */
+.controles-zona { background: #0f172a; padding: 0.8rem; border-top: 1px solid #1e293b; display: flex; flex-direction: column; gap: 0.6rem; }
+.botones-dados { display: flex; justify-content: center; gap: 0.4rem; }
+.botones-dados button { background: #1e293b; border: 1px solid #334155; color: white; font-family: 'Cinzel', serif; font-weight: bold; padding: 0.4rem; border-radius: 4px; cursor: pointer; flex: 1; font-size: 0.8rem; }
+.botones-dados button:hover { background: #3b82f6; }
+.btn-d20 { background: #1e3a8a !important; color: #facc15 !important; border-color: #3b82f6 !important; }
 
-/* CONSTRUCTOR MANUAL (ABAjO) */
-.constructor-manual { position: absolute; bottom: 0; left: 0; right: 0; background: #0f172a; border-top: 1px solid #1e293b; padding: 1rem 2rem; display: flex; flex-direction: column; gap: 1rem; transition: opacity 0.3s; }
-.constructor-manual.deshabilitado { opacity: 0.5; pointer-events: none; }
-
-.botones-dados { display: flex; justify-content: center; gap: 0.8rem; }
-.btn-dado-add { background: #1e293b; border: 1px solid #334155; color: white; font-family: 'Cinzel', serif; font-weight: bold; width: 50px; height: 50px; border-radius: 8px; cursor: pointer; transition: 0.2s; font-size: 1rem; }
-.btn-dado-add:hover { background: #3b82f6; border-color: #60a5fa; transform: translateY(-3px); }
-.d20-add { background: #1e3a8a; border-color: #3b82f6; color: #facc15; }
-
-.pool-visual { display: flex; align-items: center; justify-content: space-between; background: #050505; border: 1px dashed #334155; border-radius: 8px; padding: 0.5rem 1rem; min-height: 50px; }
-.pool-items { display: flex; gap: 0.5rem; flex-wrap: wrap; flex-grow: 1; }
-.badge-pool { background: #1e3a8a; color: white; font-family: monospace; font-size: 0.8rem; font-weight: bold; padding: 0.3rem 0.6rem; border-radius: 4px; border: 1px solid #3b82f6; }
-.texto-gris { color: #64748b; font-style: italic; font-size: 0.9rem; }
-.pool-acciones { display: flex; gap: 0.5rem; }
-.btn-limpiar { background: transparent; border: 1px solid #475569; color: #cbd5e1; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; font-weight: bold; }
-.btn-limpiar:hover { background: #ef4444; color: white; border-color: #ef4444; }
-.btn-tirar-pool { background: #b45309; border: 1px solid #d97706; color: white; padding: 0.4rem 1.5rem; border-radius: 4px; cursor: pointer; font-weight: bold; font-family: 'Cinzel', serif; font-size: 1.1rem; }
-.btn-tirar-pool:hover { background: #d97706; transform: scale(1.05); }
-
-.fade-mesa-enter-active, .fade-mesa-leave-active { transition: opacity 0.3s ease; }
-.fade-mesa-enter-from, .fade-mesa-leave-to { opacity: 0; }
-.slide-up-enter-active { transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
-.slide-up-enter-from { opacity: 0; transform: translateY(50px) scale(0.8); }
+.pool-accion { display: flex; flex-direction: column; gap: 0.5rem; background: #050505; border: 1px dashed #334155; padding: 0.5rem; border-radius: 6px; }
+.pool-view { display: flex; gap: 0.3rem; flex-wrap: wrap; min-height: 22px; }
+.badge-dado { background: #1e3a8a; border: 1px solid #3b82f6; color: white; padding: 0.1rem 0.4rem; border-radius: 4px; font-family: monospace; font-size: 0.7rem; }
+.txt-gris { color: #475569; font-size: 0.8rem; font-style: italic; }
+.inputs-final { display: flex; gap: 0.4rem; height: 35px; }
+.inp-bono { width: 60px; background: #111; border: 1px solid #475569; color: white; text-align: center; border-radius: 4px; font-weight: bold; }
+.btn-clean { background: transparent; border: 1px solid #ef4444; color: #fca5a5; border-radius: 4px; padding: 0 0.5rem; cursor: pointer; }
+.btn-roll { flex-grow: 1; background: #b45309; border: 1px solid #d97706; color: white; font-family: 'Cinzel', serif; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 1.1rem; }
 </style>
