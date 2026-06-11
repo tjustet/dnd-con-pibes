@@ -313,7 +313,7 @@ onMounted(() => { cargarMesaDM() })
       
       <div class="panel-superior">
         <div class="header-izq">
-          <button @click="router.back()" class="btn-ghost">← Salir</button>
+          <button @click="router.push(`/campanas/${route.params.id}`)" class="btn-ghost">← Salir</button>
           <h1 class="titulo-dm">Mesa del DM: <span class="campana-name">{{ campana.nombre }}</span></h1>
           <div class="toggle-oculto">
             <span class="lbl-oculto">Ocultar Dados</span>

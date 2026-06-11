@@ -259,7 +259,7 @@ onUnmounted(() => { if (canalVision) supabase.removeChannel(canalVision) })
     
     <div v-else class="contenedor-principal">
       <div class="controles-superiores">
-        <button @click="router.back()" class="btn-ghost">← Regresar</button>
+        <button @click="router.push('../dashboard')" class="btn-ghost">← Regresar</button>
         <div class="acciones-derecha">
           <button v-if="modoEdicion && pj.tipo === 'pj'" @click="cancelarEdicion" class="btn-rojo">✖ Cancelar</button>
           <button v-if="!modoEdicion" @click="modoEdicion = true" class="btn-ghost">✏️ Editar Ficha</button>
