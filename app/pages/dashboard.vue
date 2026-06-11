@@ -21,12 +21,15 @@ let player = null
 
 const toggleMusica = () => {
   if (!player) return
+  
   if (musicaSonando.value) {
-    player.pauseVideo()
+    player.mute()
+    musicaSonando.value = false
   } else {
+    player.unMute()
     player.playVideo()
+    musicaSonando.value = true
   }
-  musicaSonando.value = !musicaSonando.value
 }
 
 // Pasamos el ID directamente como parámetro para no depender de user.value
@@ -116,10 +119,31 @@ onMounted(() => {
   window.onYouTubeIframeAPIReady = () => {
     player = new window.YT.Player('yt-player', {
       height: '0', width: '0', videoId: 'vyg5jJrZ42s',
-      playerVars: { autoplay: 0, loop: 1, playlist: 'vyg5jJrZ42s', controls: 0, origin: window.location.origin },
-      events: { onReady: (event) => event.target.setVolume(12) } 
+      playerVars: { 
+        autoplay: 1, 
+        loop: 1, 
+        playlist: 'vyg5jJrZ42s', 
+        controls: 0, 
+        origin: window.location.origin,
+        mute: 1
+      },
+      events: { 
+        onReady: (event) => {
+          event.target.setVolume(20)
+          event.target.unMute()
+          event.target.playVideo()
+        } 
+      } 
     })
   }
+
+  document.addEventListener('click', () => {
+    if (player && !musicaSonando.value) {
+      player.unMute()
+      player.playVideo()
+      musicaSonando.value = true
+    }
+  }, { once: true }) // Solo funciona la primera vez que tocan algo
 })
 </script>
 
