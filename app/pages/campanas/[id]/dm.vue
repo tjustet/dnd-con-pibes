@@ -1,5 +1,75 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import GestorTiendasDM from '../../components/GestorTiendasDM.vue'
+// --- LÓGICA DE TIENDAS Y CARRITOS ---
+const modalTiendasAbierto = ref(false)
+
+const manejarActualizacionCarritos = (nuevosCarritos) => {
+  estadoMesa.value.carritos = nuevosCarritos
+  guardarMesaDb()
+}
+
+const rechazarCompra = (pjId) => {
+  if(estadoMesa.value.carritos[pjId]) {
+    estadoMesa.value.carritos[pjId].estado = 'rechazado'
+    guardarMesaDb()
+    // Lo borramos a los 3 segundos para limpiar pantalla
+    setTimeout(() => { 
+      delete estadoMesa.value.carritos[pjId]; guardarMesaDb() 
+    }, 3000)
+  }
+}
+
+const aprobarCompra = async (pjId) => {
+  const carrito = estadoMesa.value.carritos[pjId]
+  if (!carrito) return
+  
+  const pj = personajesActivos.value.find(p => p.id === pjId)
+  if (!pj) return
+
+  // 1. Calculamos las monedas actuales a Cobre para restarle el total
+  const mon = pj.monedas || { ppt: 0, po: 0, plata: 0, pc: 0 }
+  let cobrePj = (mon.ppt * 10000) + (mon.po * 1000) + (mon.plata * 100) + mon.pc
+  
+  if (cobrePj < carrito.total) {
+    alert("¡El jugador no tiene suficiente dinero para pagar el precio final!")
+    return
+  }
+
+  // 2. Restamos la plata y reconvertimos a formato de monedas
+  cobrePj -= carrito.total
+  let resto = cobrePj
+  const nPpt = Math.floor(resto / 10000); resto %= 10000;
+  const nPo = Math.floor(resto / 1000); resto %= 1000;
+  const nPlata = Math.floor(resto / 100); resto %= 100;
+  const nPc = resto;
+
+  // 3. Le pasamos los objetos al inventario
+  const nuevoInventario = [...(pj.inventario || [])]
+  carrito.items.forEach(it => {
+    nuevoInventario.push({ 
+      id: Date.now() + Math.random(), 
+      nombre: it.nombre, 
+      cantidad: 1, 
+      tipo: 'comprado', 
+      peso: it.peso || 0,
+      bono: it.bono 
+    })
+  })
+
+  // 4. Actualizamos la BD del jugador
+  await supabase.from('characters').update({ 
+    monedas: { ppt: nPpt, po: nPo, plata: nPlata, pc: nPc },
+    inventario: nuevoInventario
+  }).eq('id', pjId)
+
+  // 5. Limpiamos el carrito con mensaje de éxito
+  estadoMesa.value.carritos[pjId].estado = 'aprobado'
+  guardarMesaDb()
+  setTimeout(() => { 
+    delete estadoMesa.value.carritos[pjId]; guardarMesaDb() 
+  }, 3000)
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -11,7 +81,7 @@ const campana = ref({ nombre: 'Cargando Mesa del DM...' })
 // ==========================================
 // ESTADO PERSISTENTE Y REALTIME
 // ==========================================
-const estadoMesa = ref({ pjs: [], npcs: [], enemigos: [], entidadVisible: null })
+const estadoMesa = ref({ pjs: [], npcs: [], enemigos: [], entidadVisible: null, carritos: {} })
 const historialCompartido = ref([]) 
 let canalMesa = null 
 let canalPersonajes = null // NUEVO: Canal para escuchar la vida de los PJs
@@ -309,6 +379,39 @@ const limpiarHistorialGlobal = async () => {
   }
 }
 
+// Estados para la visión libre
+const modalVisionAbierto = ref(false)
+const urlVisionLibre = ref('')
+
+// Función para forzar una imagen en las pantallas de los jugadores
+const compartirVisionLibre = () => {
+  if (!urlVisionLibre.value) return
+  
+  // Usamos el mismo sistema que ya lee el jugador, pero con datos inventados
+  estadoMesa.value.entidadVisible = {
+    nombre: 'Visión del DM',
+    imagen: urlVisionLibre.value
+  }
+  
+  guardarMesaDb() // Esto dispara el websocket a los jugadores
+  modalVisionAbierto.value = false
+  urlVisionLibre.value = '' // Limpiamos el input
+}
+
+const manejarProyeccionVision = (payload) => {
+  // payload trae { nombre, imagen, targets }
+  estadoMesa.value.entidadVisible = { nombre: payload.nombre, imagen: payload.imagen }
+  // Nota: Aquí guardamos globalmente. Si el target es específico, se requeriría lógica extra en el Websocket
+  guardarMesaDb()
+}
+
+const manejarProyeccionTienda = (payload) => {
+  // payload trae { nombreLugar, inventario, targets }
+  estadoMesa.value.tiendaVisible = { nombre: payload.nombreLugar, inventario: payload.inventario }
+  guardarMesaDb()
+  modalTiendasAbierto.value = false
+}
+
 onMounted(() => { cargarMesaDM() })
 </script>
 
@@ -332,8 +435,10 @@ onMounted(() => { cargarMesaDM() })
           </div>
         </div>
         <div class="botones-dm-acciones">
+          <button @click="modalVisionAbierto = true" class="btn-ghost">👁️ Proyectar Imagen</button>
           <button v-if="!combateActivo" @click="prepararIniciativa" class="btn-accion-dm dorado">⚔️ INICIATIVA</button>
           <button v-else @click="terminarCombate" class="btn-accion-dm rojo">🛑 Fin Combate</button>
+          <button class="btn-control tienda" @click="modalTiendasAbierto = true">🏪 Gestión de Tiendas</button>
           <button @click="modalAgregarJugadorAbierto = true" class="btn-accion-dm azul">+ Añadir PJ</button>
           <button @click="modalAgregarNpcAbierto = true" class="btn-accion-dm verde">+ Añadir NPC</button>
           <button @click="modalAgregarEnemigoAbierto = true" class="btn-accion-dm rojo">+ Añadir Enemigo</button>
@@ -652,6 +757,33 @@ onMounted(() => { cargarMesaDM() })
       </div>
     </div>
 
+    <div v-if="modalVisionAbierto" class="modal-dm-overlay" @click.self="modalVisionAbierto = false">
+      <div class="modal-dm-sheet form-medium">
+        <h3>👁️ Proyectar Visión a los Jugadores</h3>
+        <p class="txt-gris mb-corto">Pega un link de internet para mostrar una imagen temporal en la pantalla de todos.</p>
+        
+        <input type="text" v-model="urlVisionLibre" placeholder="URL de la imagen (ej: https://...)" class="input-search-modal mb-corto" />
+        
+        <div v-if="urlVisionLibre" class="preview-imagen">
+          <img :src="urlVisionLibre" alt="Preview" />
+        </div>
+
+        <div class="acciones-modal">
+          <button class="btn-cancelar" @click="modalVisionAbierto = false">Cancelar</button>
+          <button class="btn-accion-dm dorado" @click="compartirVisionLibre">Proyectar ahora</button>
+        </div>
+      </div>
+    </div>
+
+    <GestorTiendasDM 
+      v-if="modalTiendasAbierto" 
+      :campaignId="route.params.id"
+      :jugadores="personajesActivos"
+      @cerrar="modalTiendasAbierto = false"
+      @proyectarVision="manejarProyeccionVision"
+      @proyectarTienda="manejarProyeccionTienda"
+    />
+
 
     </div>
 </template>
@@ -767,7 +899,26 @@ input:checked + .slider:before { transform: translateX(20px); }
 
 /* DRAWERS LATERALES */
 .drawer-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 99998; backdrop-filter: blur(2px); }
-.drawer { position: fixed; top: 0; bottom: 0; width: 400px; max-width: 90vw; background: #0a0a0c; border-left: 2px solid #3b82f6; border-right: 2px solid #3b82f6; box-shadow: 0 0 30px rgba(0,0,0,0.9); z-index: 99999; padding: 1.5rem; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+.drawer { 
+  position: fixed; 
+  top: 0; 
+  bottom: 0; 
+  width: 400px; 
+  max-width: 90vw; 
+  background: #0a0a0c; 
+  box-shadow: -10px 0 30px rgba(0,0,0,0.9); 
+  z-index: 99999; 
+  padding: 1.5rem; 
+  /* LA MAGIA SUCEDE ACÁ ABAJO */
+  display: block; /* Sacamos el flex para evitar que comprima los elementos */
+  overflow-y: auto; /* Permite que TODO el panel escrolee naturalmente */
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1); 
+}
+.drawer::after {
+  content: "";
+  display: block;
+  height: 2rem;
+}
 .drawer.right { right: 0; transform: translateX(0); border-left: 2px solid #3b82f6; border-right: none; }
 .drawer.left { left: 0; transform: translateX(0); border-right: 2px solid #3b82f6; border-left: none; }
 .btn-cerrar-drawer { position: absolute; top: 15px; right: 15px; background: rgba(239,68,68,0.2); color: #fca5a5; border: 1px solid #ef4444; width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; cursor: pointer; }
@@ -793,7 +944,12 @@ input:checked + .slider:before { transform: translateX(20px); }
 .drawer-seccion.ataques { flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
 .drawer-seccion h3 { font-family: 'Cinzel', serif; color: #facc15; font-size: 1rem; margin: 0 0 0.8rem 0; border-bottom: 1px solid #1e293b; padding-bottom: 0.3rem; }
 .input-search-drawer { width: 100%; background: #050505; border: 1px solid #334155; color: white; padding: 0.5rem; border-radius: 4px; margin-bottom: 0.8rem; font-size: 0.85rem; outline: none;}
-.lista-ataques-drawer { overflow-y: auto; display: flex; flex-direction: column; gap: 0.8rem; padding-right: 0.3rem; }
+.lista-ataques-drawer { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 0.8rem; 
+  margin-top: 1rem;
+}
 .atk-card-drawer { background: #0a0a0c; border: 1px solid #1e293b; border-radius: 6px; padding: 0.8rem; }
 .atk-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
 .atk-head h4 { margin: 0; color: white; font-size: 0.9rem; }

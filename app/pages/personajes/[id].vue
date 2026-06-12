@@ -137,6 +137,120 @@ const cargarFicha = async () => {
   cargando.value = false
 }
 
+// --- SISTEMA DE COMPRAS JUGADOR ---
+const tiendaAbierta = ref(false)
+const catalogoTienda = ref([])
+const nombreTienda = ref('')
+const miCarrito = ref([]) // Objetos que el jugador quiere
+
+// Monedas bloqueos
+const peticionesBloqueadas = ref([])
+
+// Calculador rápido de plata
+const miPlataEnCobre = computed(() => {
+  const m = pj.value.monedas || { ppt: 0, po: 0, plata: 0, pc: 0 }
+  return (m.ppt * 10000) + (m.po * 1000) + (m.plata * 100) + m.pc
+})
+
+const totalCarrito = computed(() => {
+  return miCarrito.value.reduce((acc, it) => acc + (it.precio_dm ?? it.precio_original), 0)
+})
+
+// Escuchador mejorado para la tienda
+const checkTiendaGlobal = async () => {
+  if (!pj.value.campaign_id) return
+  const { data } = await supabase.from('campaigns').select('mesa_estado').eq('id', pj.value.campaign_id).single()
+  if (data?.mesa_estado) {
+    // Si hay una tienda visible y estoy en los targets
+    const tv = data.mesa_estado.tiendaVisible
+    if (tv && (tv.targets === 'all' || tv.targets.includes(pj.value.id))) {
+      tiendaAbierta.value = true
+      nombreTienda.value = tv.nombre
+      catalogoTienda.value = tv.inventario
+    } else {
+      tiendaAbierta.value = false
+    }
+
+    // Leemos el estado de nuestro carrito desde el DM
+    const miC = data.mesa_estado.carritos?.[pj.value.id]
+    if (miC) {
+      miCarrito.value = miC.items // Actualizamos por si el DM cambió el precio
+      if (miC.estado === 'rechazado') { alert("El vendedor se negó a la transacción."); limpiarCarrito() }
+      if (miC.estado === 'aprobado') { alert("¡Compra realizada con éxito!"); limpiarCarrito(); tiendaAbierta.value = false }
+    }
+  }
+}
+
+// Para estar siempre sincronizados
+setInterval(checkTiendaGlobal, 2000)
+
+const agregarAlCarrito = async (item) => {
+  miCarrito.value.push({ id: item.id, nombre: item.nombre, precio_original: item.valor_cobre, precio_dm: item.valor_cobre, peso: item.peso, bono: item.bono })
+  enviarCarritoAlDM('comprando')
+}
+
+const sacarDelCarrito = (idx) => {
+  miCarrito.value.splice(idx, 1)
+  if (miCarrito.value.length === 0) limpiarCarrito()
+  else enviarCarritoAlDM('comprando')
+}
+
+const limpiarCarrito = async () => {
+  miCarrito.value = []
+  // Le decimos al DM que borre nuestro carrito
+  const { data } = await supabase.from('campaigns').select('mesa_estado').eq('id', pj.value.campaign_id).single()
+  if (data?.mesa_estado?.carritos) {
+    delete data.mesa_estado.carritos[pj.value.id]
+    await supabase.from('campaigns').update({ mesa_estado: data.mesa_estado }).eq('id', pj.value.campaign_id)
+  }
+}
+
+const enviarCarritoAlDM = async (estado) => {
+  const { data } = await supabase.from('campaigns').select('mesa_estado').eq('id', pj.value.campaign_id).single()
+  const mEst = data.mesa_estado || {}
+  if (!mEst.carritos) mEst.carritos = {}
+  
+  mEst.carritos[pj.value.id] = {
+    estado: estado,
+    total: totalCarrito.value,
+    items: miCarrito.value
+  }
+  
+  await supabase.from('campaigns').update({ mesa_estado: mEst }).eq('id', pj.value.campaign_id)
+}
+
+const pagarCarrito = () => {
+  if (miPlataEnCobre.value < totalCarrito.value) {
+    alert("No tienes dinero suficiente. ¡Pídele a un compañero!")
+    return
+  }
+  enviarCarritoAlDM('pagando')
+}
+
+// --- P2P TRANSFERENCIAS ---
+const pedirPlata = async (pjObjetivoId, cantidadCobre) => {
+  if (peticionesBloqueadas.value.includes(pjObjetivoId)) return alert("Tienes a este jugador bloqueado.")
+  // Usamos un Realtime Broadcast nativo de Supabase para mandarle una alerta al compañero
+  supabase.channel('room_' + pj.value.campaign_id).send({
+    type: 'broadcast',
+    event: 'pedir_plata',
+    payload: { deId: pj.value.id, deNombre: pj.value.nombre_pj, paraId: pjObjetivoId, monto: cantidadCobre }
+  })
+  alert("Petición enviada al compañero.")
+}
+
+// En el cargarFicha(), cuando armás los websockets, agregá el Broadcast:
+/*
+  supabase.channel('room_' + pj.value.campaign_id)
+    .on('broadcast', { event: 'pedir_plata' }, (payload) => {
+      if (payload.payload.paraId === pj.value.id && !peticionesBloqueadas.value.includes(payload.payload.deId)) {
+        if(confirm(`${payload.payload.deNombre} te está pidiendo que le pases fondos. ¿Aceptas?`)) {
+          // Lógica de transferencia SQL acá... (restarle a uno, sumarle al otro)
+        }
+      }
+    }).subscribe()
+*/
+
 const guardarFicha = async () => {
   cargando.value = true
   try {
@@ -255,11 +369,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-<div v-if="pj.efectos && pj.efectos.length > 0" class="barra-estados">
-  <div v-for="(efecto, idx) in pj.efectos" :key="idx" class="badge-estado">
-    {{ efecto.icono }} {{ efecto.nombre }}
+  <div v-if="pj.efectos && pj.efectos.length > 0" class="barra-estados">
+    <div v-for="(efecto, idx) in pj.efectos" :key="idx" class="badge-estado">
+      {{ efecto.icono }} {{ efecto.nombre }}
+    </div>
   </div>
-</div>
 
   <div class="pantalla-ficha">
     <div class="filtro-oscuro"></div>
@@ -564,6 +678,38 @@ onUnmounted(() => {
       <button class="btn-si-compartir" @click="confirmarComunidad(true)">Aceptar y Forjar Cambios</button>
     </div>
   </div>
+
+  <div v-if="tiendaAbierta" class="panel-tienda-pj">
+      <div class="t-header">
+        <h3>🛒 {{ nombreTienda }}</h3>
+        <button @click="tiendaAbierta = false" class="btn-cerrar-t">Ocultar</button>
+      </div>
+
+      <div class="t-bolsa">
+        <span class="oro">💰 Tienes: {{ pj.monedas?.po || 0 }} po | {{ pj.monedas?.plata || 0 }} pp | {{ pj.monedas?.pc || 0 }} pc</span>
+      </div>
+
+      <div class="t-catalogo">
+        <div v-for="item in catalogoTienda" :key="item.id" class="t-item">
+          <div class="i-info">
+            <strong>{{ item.nombre }}</strong>
+            <span>{{ item.bono }}</span>
+          </div>
+          <button @click="agregarAlCarrito(item)" class="btn-add">Añadir</button>
+        </div>
+      </div>
+
+      <div class="t-carrito" v-if="miCarrito.length > 0">
+        <h4>Tu Selección:</h4>
+        <div v-for="(it, idx) in miCarrito" :key="idx" class="c-fila">
+          <span>{{ it.nombre }}</span>
+          <button @click="sacarDelCarrito(idx)">❌</button>
+        </div>
+        <div class="c-total">Total a pagar (DM): {{ totalCarrito }} pc</div>
+        <button @click="pagarCarrito" class="btn-pagar" :disabled="miPlataEnCobre < totalCarrito">💰 OFRECER PAGO AL DM</button>
+        <button class="btn-pedir" @click="pedirPlata('id_de_otro', totalCarrito)">🙏 Pedir a compañero</button>
+      </div>
+    </div>
 </div>
 </template>
 
@@ -786,4 +932,20 @@ input[type="number"].short {
 .barra-estados { background: rgba(107, 33, 168, 0.2); border-bottom: 2px solid #9333ea; padding: 0.5rem 2rem; display: flex; gap: 1rem; align-items: center; justify-content: center; }
 .badge-estado { font-family: 'Cinzel', serif; font-size: 1.1rem; color: #f3e8ff; text-shadow: 0 0 10px rgba(168, 85, 247, 0.8); animation: latido 2s infinite; }
 @keyframes latido { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+
+.panel-tienda-pj { position: fixed; right: 20px; top: 100px; width: 320px; background: #0a0a0c; border: 2px solid #b45309; border-radius: 12px; z-index: 100; box-shadow: -5px 10px 30px rgba(0,0,0,0.8); display: flex; flex-direction: column; max-height: 80vh; }
+.t-header { background: #b45309; color: white; padding: 1rem; display: flex; justify-content: space-between; border-radius: 10px 10px 0 0; }
+.t-header h3 { margin: 0; font-family: 'Cinzel', serif; }
+.t-bolsa { padding: 0.8rem; background: #111; text-align: center; font-weight: bold; border-bottom: 1px solid #334155; color: #facc15; }
+.t-catalogo { flex-grow: 1; overflow-y: auto; padding: 0.5rem; }
+.t-item { display: flex; justify-content: space-between; background: #1a1a1f; padding: 0.8rem; margin-bottom: 0.5rem; border-radius: 6px; border: 1px solid #334155; }
+.i-info { display: flex; flex-direction: column; color: white; font-size: 0.9rem; }
+.i-info span { font-size: 0.8rem; color: #94a3b8; }
+.btn-add { background: #166534; color: white; border: none; border-radius: 4px; padding: 0.3rem 0.6rem; cursor: pointer; }
+.t-carrito { background: #111; padding: 1rem; border-top: 2px dashed #b45309; border-radius: 0 0 10px 10px; }
+.c-fila { display: flex; justify-content: space-between; color: #cbd5e1; font-size: 0.9rem; margin-bottom: 0.3rem; }
+.c-total { font-weight: bold; color: #4ade80; text-align: right; margin: 1rem 0; }
+.btn-pagar { width: 100%; background: #ca8a04; color: white; border: none; padding: 0.8rem; border-radius: 6px; font-weight: bold; cursor: pointer; }
+.btn-pagar:disabled { background: #475569; cursor: not-allowed; }
+.btn-pedir { width: 100%; background: transparent; color: #60a5fa; border: 1px dashed #60a5fa; padding: 0.5rem; margin-top: 0.5rem; cursor: pointer; }
 </style>

@@ -163,6 +163,7 @@ const tirarManual = () => {
           <button @click="agregarDadoManual(10)">d10</button>
           <button @click="agregarDadoManual(12)">d12</button>
           <button @click="agregarDadoManual(20)" class="btn-d20">d20</button>
+          <button @click="agregarDadoManual(100)">d100</button>
         </div>
         <div class="pool-accion">
           <div class="pool-view">

@@ -72,22 +72,30 @@ onMounted(() => {
       
       <div class="header-campana">
         <div class="header-izq">
-          <button @click="router.push('../dashboard')" class="btn-regresar">← Volver</button>
+          <button @click="router.push('../dashboard')" class="btn-regresar" title="Volver al Dashboard">←</button>
           <h1 class="titulo-campana">{{ campana.nombre }}</h1>
-          <button @click="router.push(`/campanas/${route.params.id}/dm`)" class="btn-dm-acceso">
-            👁️ Pantalla del DM
-          </button>
-          <button @click="editandoImagen = true" class="btn-ghost">🖼️ Cambiar Portada</button>
-          <button @click="borrarCampana" class="btn-borrar-campana">🗑️ Destruir Campaña</button>
         </div>
         
+        <div class="header-centro">
+          <button @click="router.push(`/campanas/${route.params.id}/dm`)" class="btn-dm-acceso">
+            👁️ Entrar a la Mesa (DM)
+          </button>
+          <button @click="router.push(`/campanas/${route.params.id}/lugares`)" class="btn-herramienta">
+            🏪 Tiendas y Lugares
+          </button>
+        </div>
+
         <div class="header-der">
-          <button class="btn-nuevo" @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=pj`)">
-            + Crear Personaje
-          </button>
-          <button class="btn-nuevo rojo" @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=npc`)">
-            + Crear NPC/Enemigo
-          </button>
+          <div class="dropdown-creacion">
+            <button class="btn-nuevo">+ Crear Entidad ▼</button>
+            <div class="dropdown-menu">
+              <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=pj`)">Jugador</button>
+              <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=npc`)">NPC / Aliado</button>
+              <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=enemigo`)">Monstruo / Enemigo</button>
+            </div>
+          </div>
+          <button @click="editandoImagen = true" class="btn-herramienta" title="Cambiar Portada">🖼️</button>
+          <button @click="borrarCampana" class="btn-borrar-campana" title="Destruir Campaña">Eliminar Campaña</button>
         </div>
       </div>
 
@@ -186,10 +194,22 @@ onMounted(() => {
 .cargando-box { min-height: 60vh; display: flex; align-items: center; justify-content: center; position: relative; z-index: 10; }
 .texto-cargando { font-family: 'Cinzel', serif; font-size: 1.5rem; color: #64748b; text-align: center; }
 
-/* HEADER */
-.header-campana { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 1.2rem; margin-bottom: 2rem; gap: 1rem; flex-wrap: wrap; }
-.header-izq { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-.header-der { display: flex; align-items: center; gap: 1rem; }
+/* REDISEÑO HEADER CAMPAÑA */
+.header-campana { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 1.2rem; margin-bottom: 2rem; gap: 1rem; flex-wrap: wrap; background: rgba(10,10,12,0.8); padding: 1rem; border-radius: 12px; }
+.header-izq { display: flex; align-items: center; gap: 1rem; }
+.header-centro { display: flex; align-items: center; gap: 1rem; padding: 0.4rem; border-radius: 8px }
+.header-der { display: flex; align-items: center; gap: 0.8rem; }
+.btn-herramienta { background: transparent; border: 1px solid #475569; color: #cbd5e1; padding: 0.6rem 1rem; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+.btn-herramienta:hover { background: #1e293b; border-color: #94a3b8; }
+
+/* DROPDOWN CREACIÓN */
+.dropdown-creacion { position: relative; display: inline-block; }
+.dropdown-creacion:hover .dropdown-menu { display: flex; }
+.dropdown-menu { display: none; position: absolute; right: 0; top: 100%; background: #0a0a0c; border: 1px solid #3b82f6; border-radius: 8px; flex-direction: column; min-width: 180px; z-index: 50; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.8); }
+.dropdown-menu button { background: transparent; border: none; border-bottom: 1px solid #1e293b; color: white; padding: 0.8rem 1rem; text-align: left; cursor: pointer; transition: 0.2s; }
+.dropdown-menu button:hover { background: #1e3a8a; }
+.dropdown-menu button:last-child { border-bottom: none; }
+
 .btn-regresar { background: transparent; border: 1px solid #334155; color: #94a3b8; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: 0.2s; }
 .btn-regresar:hover { background: #1e293b; color: white; }
 .titulo-campana { font-family: 'Cinzel', serif; font-size: 2.2rem; color: #facc15; margin: 0 1rem; line-height: 1.1; }
