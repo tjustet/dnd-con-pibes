@@ -302,6 +302,13 @@ const agregarEfectoDesdeObj = (entidad, tipo, objEfecto) => {
   }
 }
 
+const limpiarHistorialGlobal = async () => {
+  if(confirm("¿Estás seguro de querer borrar todo el registro de dados de esta sesión?")) {
+    historialCompartido.value = [] // Lo borramos de la vista
+    await supabase.from('campaigns').update({ historial_dados: [] }).eq('id', route.params.id)
+  }
+}
+
 onMounted(() => { cargarMesaDM() })
 </script>
 
@@ -384,7 +391,10 @@ onMounted(() => { cargarMesaDM() })
           <div class="centro-dados-dm">
             <div class="mesa-central-fisica">
               <div class="mesa-mitad-izq">
-                <h4 class="tit-seccion-mesa">Registro Global de Sesión</h4>
+                <div class="header-historial-dm">
+                  <h4 class="tit-seccion-mesa" style="margin: 0; border: none;">Registro Global</h4>
+                  <button @click="limpiarHistorialGlobal" class="btn-limpiar-historial" title="Borrar historial">🧹</button>
+                </div>
                 <div class="historial-dm-scroll">
                   <div v-for="h in historialCompartido" :key="h.id" class="hist-item-dm" :class="{'oculto-bg': h.oculto}">
                     <div class="h-header">
@@ -841,4 +851,36 @@ input:checked + .slider:before { transform: translateX(20px); }
 .badge-efecto-activo:hover { background: #ef4444; border-color: #991b1b; color: white; }
 .btn-asig.veneno { background: #6b21a8; }
 .btn-asig.veneno:hover { background: #9333ea; }
+
+/* MODAL INICIATIVA */
+.check-lista { display: flex; flex-direction: column; gap: 0.5rem; max-height: 300px; overflow-y: auto; background: #111; padding: 1rem; border-radius: 8px; border: 1px solid #334155; margin-bottom: 1rem; }
+.item-check { display: flex; align-items: center; gap: 0.8rem; cursor: pointer; color: white; font-size: 1rem; transition: 0.2s; }
+.item-check:hover { background: #1e293b; padding-left: 0.5rem; border-radius: 4px; }
+.item-check input { width: 18px; height: 18px; accent-color: #facc15; cursor: pointer; }
+.t-verde { color: #10b981; font-weight: 600; }
+.t-rojo { color: #ef4444; font-weight: 600; }
+.btn-guardar-creacion.dorado { width: 100%; background: #b45309; border: 1px solid #d97706; color: white; padding: 0.8rem; border-radius: 6px; font-weight: bold; font-family: 'Cinzel', serif; font-size: 1.1rem; cursor: pointer; transition: 0.2s; box-shadow: 0 4px 10px rgba(180,83,9,0.3); }
+.btn-guardar-creacion.dorado:hover { background: #d97706; transform: translateY(-2px); box-shadow: 0 6px 15px rgba(217,119,6,0.4); }
+
+/* BARRA INICIATIVA (TRACKER) */
+.barra-iniciativa { display: flex; align-items: center; gap: 1rem; background: #0f172a; border: 1px solid #1e293b; padding: 0.8rem; border-radius: 8px; margin-bottom: 1rem; box-shadow: inset 0 0 15px rgba(0,0,0,0.8); }
+.controles-iniciativa { flex-shrink: 0; padding-right: 1rem; border-right: 1px solid #334155; }
+.btn-siguiente-turno { background: #1e3a8a; border: 1px solid #3b82f6; color: white; padding: 0.6rem 1.2rem; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s; font-family: 'Cinzel', serif; }
+.btn-siguiente-turno:hover { background: #2563eb; transform: scale(1.05); box-shadow: 0 0 10px rgba(59,130,246,0.5); }
+.tracker-scroll { display: flex; gap: 1rem; overflow-x: auto; padding: 1rem; flex-grow: 1; align-items: center; }
+.tracker-scroll::-webkit-scrollbar { height: 6px; }
+.tracker-scroll::-webkit-scrollbar-thumb { background: #3b82f6; border-radius: 3px; }
+
+/* CARTAS DE COMBATIENTES */
+.combatiente-card { display: flex; flex-direction: column; align-items: center; background: #111; border: 2px solid #334155; border-radius: 8px; padding: 0.6rem; min-width: 90px; position: relative; transition: 0.3s; opacity: 0.5; filter: grayscale(50%); }
+.combatiente-card.es-su-turno { border-color: #facc15; opacity: 1; filter: grayscale(0%); transform: scale(1.15); background: #1a1a10; box-shadow: 0 0 20px rgba(250,204,21,0.4); z-index: 10; }
+.c-badge { position: absolute; top: -10px; right: -10px; background: #ef4444; color: white; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; font-weight: bold; border: 2px solid #0a0a0c; box-shadow: 0 2px 5px rgba(0,0,0,0.5); }
+.c-avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid #475569; margin-bottom: 0.4rem; transition: 0.3s; }
+.es-su-turno .c-avatar { border-color: #facc15; box-shadow: 0 0 10px rgba(250,204,21,0.5); }
+.c-fallback { width: 50px; height: 50px; border-radius: 50%; background: #1e293b; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; border: 2px solid #475569; margin-bottom: 0.4rem; }
+.c-nom { font-size: 0.8rem; color: white; text-align: center; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 80px; }
+
+.header-historial-dm { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; margin-bottom: 1rem; flex-shrink: 0; }
+.btn-limpiar-historial { background: transparent; border: 1px solid #475569; color: #cbd5e1; border-radius: 4px; padding: 0.2rem 0.5rem; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
+.btn-limpiar-historial:hover { background: #7f1d1d; border-color: #ef4444; }
 </style>

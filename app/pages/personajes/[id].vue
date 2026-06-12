@@ -18,6 +18,7 @@ const mesaRef = ref(null)
 // VISION COMPARTIDA DEL DM
 const visionRevelada = ref(null)
 let canalVision = null
+let canalPjSync = null
 
 const pj = ref({
   nombre_pj: '', raza: '', clase: '', nivel: 1, player_email: '', campaign_id: route.query.campana || null,
@@ -109,6 +110,21 @@ const cargarFicha = async () => {
           .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${pj.value.campaign_id}` }, (payload) => {
             if (payload.new.mesa_estado?.entidadVisible !== undefined) {
               visionRevelada.value = payload.new.mesa_estado.entidadVisible
+            }
+          }).subscribe()
+
+        canalPjSync = supabase.channel('pj_sync_' + pj.value.id)
+          .on('postgres_changes', { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'characters', 
+            filter: `id=eq.${pj.value.id}` 
+          }, (payload) => {
+            if (payload.new.hp_actual !== undefined) {
+              pj.value.hp_actual = payload.new.hp_actual
+            }
+            if (payload.new.efectos !== undefined) {
+              pj.value.efectos = payload.new.efectos
             }
           }).subscribe()
       }
@@ -232,7 +248,10 @@ const agregarNota = () => pj.value.notas_array.push({ titulo: 'Nueva Nota', text
 const borrarNota = (index) => pj.value.notas_array.splice(index, 1)
 
 onMounted(() => { cargarFicha() })
-onUnmounted(() => { if (canalVision) supabase.removeChannel(canalVision) })
+onUnmounted(() => { 
+  if (canalVision) supabase.removeChannel(canalVision)
+  if (canalPjSync) supabase.removeChannel(canalPjSync)
+})
 </script>
 
 <template>
