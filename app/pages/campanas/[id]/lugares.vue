@@ -1,4 +1,4 @@
-<script setup>
+<!-- <script setup>
 import { ref, onMounted, computed } from 'vue'
 
 const route = useRoute()
@@ -391,4 +391,43 @@ onMounted(() => { cargarDatos() })
 /* ESTILO ESPECIAL COMUNIDAD */
 .toggle-comunidad { background: rgba(59, 130, 246, 0.1); border: 1px solid #3b82f6; padding: 0.8rem !important; border-radius: 8px !important; }
 .toggle-comunidad span { color: #bfdbfe; font-weight: bold; }
+</style> -->
+
+<script setup>
+// IMPORTACIÓN ESTRICTA: Saltamos un nivel hacia atrás para salir de 'pages' y entrar a 'components'
+import GestorCiudades from '../../components/dm/GestorCiudades.vue'
+</script>
+
+<template>
+  <div class="pantalla-lugares-raiz">
+    <div class="filtro-fondo-oscuro"></div>
+    
+    <div class="contenido-lugares-layout">
+      <GestorCiudades />
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.pantalla-lugares-raiz {
+  min-height: 100vh;
+  background-color: #050505;
+  color: #cbd5e1;
+  position: relative;
+  overflow-x: hidden;
+}
+
+.filtro-fondo-oscuro {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, #18181b 0%, #000 100%);
+  z-index: 0;
+}
+
+.contenido-lugares-layout {
+  position: relative;
+  z-index: 10;
+  max-width: 1650px;
+  margin: 0 auto;
+}
 </style>
