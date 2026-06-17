@@ -1,13 +1,16 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 
 const props = defineProps({
   tiendaFijaId: { type: String, default: null },
-  tiendaTipo: { type: String, default: '' } // NUEVA PROP para leer el tipo de tienda
+  tiendaTipo: { type: String, default: '' },
+  npcEditando: { type: Object, default: null } // NUEVO: Recibe el NPC si estamos editando
 })
 
 const emit = defineEmits(['cerrar', 'guardar-npc'])
 const supabase = useSupabaseClient()
+const route = useRoute()
 
 const modoRapido = ref(true)
 
@@ -18,7 +21,7 @@ const trabajosBase = [
   'Veterano', 'Cartógrafo', 'Agente', 'Caballerizo', 'Capitán', 'Clérigo',
   'Erudito', 'Banquero', 'Servidor', 'Escribano', 'Político', 'Guardia', 'Juez', 'Ladrón'
 ]
-const trabajosOrdenados = ref([...trabajosBase]) // Lista dinámica que ordenaremos
+const trabajosOrdenados = ref([...trabajosBase])
 const alineamientos = ['Leal Bueno', 'Neutral Bueno', 'Caótico Bueno', 'Leal Neutral', 'Neutral', 'Caótico Neutral', 'Leal Malvado', 'Neutral Malvado', 'Caótico Malvado']
 
 const modRaza = {
@@ -38,7 +41,9 @@ const modTrabajo = {
   'Tabernero': { principal: 'cha', secundaria: 'con' },
   'Guardia': { principal: 'str', secundaria: 'dex' },
   'Ladrón': { principal: 'dex', secundaria: 'cha' },
-  'Erudito': { principal: 'int', secundaria: 'wis' }
+  'Erudito': { principal: 'int', secundaria: 'wis' },
+  'Mago': { principal: 'int', secundaria: 'dex' },
+  'Clérigo': { principal: 'wis', secundaria: 'con' }
 }
 
 const afinidad = {
@@ -49,82 +54,53 @@ const afinidad = {
 
 const form = ref({
   nombre: '', raza: 'Humano', trabajo: 'Mercader', nivel: 0, alineamiento: 'Neutral', notas: '', tiendaDestino: props.tiendaFijaId || '',
-  fuerza: 10, destreza: 10, constitucion: 10, inteligencia: 10, sabiduria: 10, carisma: 10, hp_max: 10, clase_armadura: 10, velocidad: '30 pies'
+  imagen_url: '', 
+  fuerza: 10, destreza: 10, constitucion: 10, inteligencia: 10, sabiduria: 10, carisma: 10, hp_max: 10, clase_armadura: 10, 
+  velocidad: 30
 })
 
 const tiendasDisponibles = ref([])
 
-// --- LÓGICA DE DETECCIÓN INTELIGENTE DE PROFESIÓN ---
 const mapearTiendaATrabajo = (tipo) => {
   if (!tipo) return 'Mercader'
   const t = tipo.toLowerCase()
-
-  // --- COMERCIO Y ARTESANÍA ---
   if (t.includes('herrero') || t.includes('herrería')) return 'Herrero'
   if (t.includes('carpinter')) return 'Carpintero'
   if (t.includes('sastr')) return 'Sastre'
   if (t.includes('joyer')) return 'Joyero'
   if (t.includes('alfar')) return 'Alfarero'
   if (t.includes('mercado general')) return 'Mercader'
-
-  // --- MAGIA ---
   if (t.includes('alquim')) return 'Alquimista'
   if (t.includes('arcana') || t.includes('magia') || t.includes('pergamino')) return 'Mago'
   if (t.includes('biblioteca')) return 'Erudito'
   if (t.includes('adivin') || t.includes('oráculo')) return 'Oráculo'
-
-  // --- ALIMENTACIÓN Y HOSPEDAJE ---
   if (t.includes('taberna') || t.includes('cervecería') || t.includes('bodega')) return 'Tabernero'
   if (t.includes('posada')) return 'Posadero'
   if (t.includes('panader')) return 'Panadero'
   if (t.includes('carnicer')) return 'Carnicero'
-
-  // --- AVENTUREROS ---
   if (t.includes('aventurero') || t.includes('gremio')) return 'Veterano'
   if (t.includes('suministro')) return 'Mercader'
   if (t.includes('cartóg')) return 'Cartógrafo'
   if (t.includes('recompensa') || t.includes('subasta')) return 'Agente'
-
-  // --- ANIMALES Y TRANSPORTE ---
   if (t.includes('establo') || t.includes('montura')) return 'Caballerizo'
   if (t.includes('puerto') || t.includes('dársena')) return 'Capitán'
-
-  // --- RELIGIÓN Y CONOCIMIENTO ---
-  if (t.includes('templo') || t.includes('monasterio')) return 'Clérigo'
+  if (t.includes('templo') || t.includes('monasterio') || t.includes('curandero')) return 'Clérigo'
   if (t.includes('academia')) return 'Erudito'
-
-  // --- SERVICIOS ---
   if (t.includes('banco')) return 'Banquero'
-  if (t.includes('curandero')) return 'Clérigo'
   if (t.includes('baños')) return 'Servidor'
   if (t.includes('notar') || t.includes('registro')) return 'Escribano'
-
-  // --- GOBIERNO ---
   if (t.includes('ayuntamiento')) return 'Político'
   if (t.includes('cuartel') || t.includes('guardia') || t.includes('prisión')) return 'Guardia'
   if (t.includes('tribunal')) return 'Juez'
-
-  // --- MERCADO NEGRO ---
   if (t.includes('negro') || t.includes('ladrón') || t.includes('contrabandista')) return 'Ladrón'
-
   return 'Mercader'
 }
 
 const prepararOpcionesTrabajo = () => {
   let trabajoRecomendado = 'Mercader'
-  
-  // Si venimos de una tienda específica, auto-detectamos
-  if (props.tiendaTipo) {
-    trabajoRecomendado = mapearTiendaATrabajo(props.tiendaTipo)
-  }
-  
+  if (props.tiendaTipo) trabajoRecomendado = mapearTiendaATrabajo(props.tiendaTipo)
   form.value.trabajo = trabajoRecomendado
-  
-  // Reordenamos el Array para poner el recomendado al principio
-  trabajosOrdenados.value = [
-    trabajoRecomendado,
-    ...trabajosBase.filter(t => t !== trabajoRecomendado)
-  ]
+  trabajosOrdenados.value = [trabajoRecomendado, ...trabajosBase.filter(t => t !== trabajoRecomendado)]
 }
 
 const cargarTiendas = async () => {
@@ -145,7 +121,8 @@ watch([() => form.value.raza, () => form.value.trabajo], () => {
 const statsGeneradas = computed(() => {
   let base = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
   const razaMod = modRaza[form.value.raza]; for (let s in razaMod) base[s] += razaMod[s]
-  const trabajoMod = modTrabajo[form.value.trabajo]; const nivel = form.value.nivel
+  const trabajoMod = modTrabajo[form.value.trabajo] || { principal: 'str', secundaria: 'dex' }
+  const nivel = form.value.nivel
 
   if (nivel > 0) {
     base[trabajoMod.principal] += Math.floor(nivel * 1.5)
@@ -161,7 +138,7 @@ const statsGeneradas = computed(() => {
 })
 
 watch(statsGeneradas, (nuevos) => {
-  if (modoRapido.value) {
+  if (modoRapido.value && !props.npcEditando) {
     form.value.fuerza = nuevos.str; form.value.destreza = nuevos.dex; form.value.constitucion = nuevos.con
     form.value.inteligencia = nuevos.int; form.value.sabiduria = nuevos.wis; form.value.carisma = nuevos.cha
     form.value.hp_max = nuevos.hpMax; form.value.clase_armadura = nuevos.ca
@@ -175,11 +152,13 @@ const procesarYGuardar = async () => {
   
   const npcFinal = {
     tipo: 'npc',
+    campaign_id: route.params.id,
     nombre_pj: form.value.nombre,
     raza: form.value.raza,
     clase: form.value.trabajo,
     nivel: form.value.nivel,
     alineamiento: form.value.alineamiento,
+    imagen_url: form.value.imagen_url || null,
     fuerza: form.value.fuerza,
     destreza: form.value.destreza,
     constitucion: form.value.constitucion,
@@ -187,25 +166,51 @@ const procesarYGuardar = async () => {
     sabiduria: form.value.sabiduria,
     carisma: form.value.carisma,
     hp_max: form.value.hp_max,
-    hp_actual: form.value.hp_max,
+    hp_actual: form.value.hp_max, // Asumimos que se cura al guardar
     clase_armadura: form.value.clase_armadura,
-    velocidad: form.value.velocidad,
+    velocidad: parseInt(form.value.velocidad) || 30,
     notas: form.value.notas,
-    inventario: []
+    inventario: props.npcEditando ? props.npcEditando.inventario : []
   }
 
-  const { data, error } = await supabase.from('characters').insert(npcFinal).select().single()
-  if (error) return alert("Error al guardar: " + error.message)
-
-  if (form.value.tiendaDestino) {
-    await supabase.from('tiendas_sesion').update({ npc_id: data.id }).eq('id', form.value.tiendaDestino)
+  // SI HAY UN NPC EDITANDO, ACTUALIZAMOS. SI NO, INSERTAMOS.
+  if (props.npcEditando) {
+    const { data, error } = await supabase.from('characters').update(npcFinal).eq('id', props.npcEditando.id).select().single()
+    if (error) return alert("Error al editar: " + error.message)
+    emit('guardar-npc', data)
+  } else {
+    const { data, error } = await supabase.from('characters').insert(npcFinal).select().single()
+    if (error) return alert("Error al guardar: " + error.message)
+    
+    // Solo vinculamos tienda si es uno nuevo
+    if (form.value.tiendaDestino && !props.tiendaFijaId) {
+      // Nota: Esta lógica de vinculación externa está, pero en la tienda se maneja por emit.
+      await supabase.from('tiendas_sesion').update({ npc_id: data.id }).eq('id', form.value.tiendaDestino)
+    }
+    emit('guardar-npc', data)
   }
-
-  emit('guardar-npc', data)
 }
 
 onMounted(() => { 
-  prepararOpcionesTrabajo()
+  if (props.npcEditando) {
+    modoRapido.value = false // Forzamos vista avanzada para editar todo manual
+    form.value = {
+      nombre: props.npcEditando.nombre_pj,
+      raza: props.npcEditando.raza,
+      trabajo: props.npcEditando.clase,
+      nivel: props.npcEditando.nivel,
+      alineamiento: props.npcEditando.alineamiento,
+      notas: props.npcEditando.notas,
+      imagen_url: props.npcEditando.imagen_url || '',
+      fuerza: props.npcEditando.fuerza, destreza: props.npcEditando.destreza,
+      constitucion: props.npcEditando.constitucion, inteligencia: props.npcEditando.inteligencia,
+      sabiduria: props.npcEditando.sabiduria, carisma: props.npcEditando.carisma,
+      hp_max: props.npcEditando.hp_max, clase_armadura: props.npcEditando.clase_armadura,
+      velocidad: props.npcEditando.velocidad || 30
+    }
+  } else {
+    prepararOpcionesTrabajo()
+  }
   cargarTiendas() 
 })
 </script>
@@ -215,8 +220,8 @@ onMounted(() => {
     <div class="modal-dm-sheet form-grande">
       
       <div class="header-modal-creacion">
-        <h3>Crear Personaje Aliado/NPC</h3>
-        <button @click="modoRapido = !modoRapido" class="btn-toggle-modo" :class="{'modo-avanzado': !modoRapido}">
+        <h3>{{ props.npcEditando ? '✏️ Editar Empleado/NPC' : '✨ Crear Personaje Aliado' }}</h3>
+        <button v-if="!props.npcEditando" @click="modoRapido = !modoRapido" class="btn-toggle-modo" :class="{'modo-avanzado': !modoRapido}">
           {{ modoRapido ? '⚙️ Pasar a Avanzado' : '✨ Volver a Rápido' }}
         </button>
       </div>
@@ -226,7 +231,10 @@ onMounted(() => {
           <label>Nombre del NPC</label>
           <input type="text" v-model="form.nombre" class="input-form" placeholder="Ej: Kaelen Puñohierro" />
 
-          <div class="input-group" v-if="!props.tiendaFijaId">
+          <label>URL de Retrato / Imagen</label>
+          <input type="text" v-model="form.imagen_url" class="input-form" placeholder="https://link-de-la-imagen.png" />
+
+          <div class="input-group" v-if="!props.tiendaFijaId && !props.npcEditando">
             <label class="t-dorado">📍 Asignar a Establecimiento</label>
             <select v-model="form.tiendaDestino" class="input-form borde-dorado">
               <option value="">NPC Libre (Sin tienda)</option>
@@ -237,13 +245,13 @@ onMounted(() => {
           <div class="row-inputs">
             <div class="input-group">
               <label>Trabajo / Clase</label>
-              <select v-model="form.trabajo" class="input-form" :disabled="!modoRapido">
+              <select v-model="form.trabajo" class="input-form" :disabled="!modoRapido && !props.npcEditando">
                 <option v-for="t in trabajosOrdenados" :key="t" :value="t">{{ t }}</option>
               </select>
             </div>
             <div class="input-group">
               <label>Raza</label>
-              <select v-model="form.raza" class="input-form" :disabled="!modoRapido">
+              <select v-model="form.raza" class="input-form" :disabled="!modoRapido && !props.npcEditando">
                 <option v-for="r in razas" :key="r" :value="r">{{ r }}</option>
               </select>
             </div>
@@ -251,8 +259,8 @@ onMounted(() => {
 
           <div class="row-inputs">
             <div class="input-group">
-              <label>Nivel de Experiencia (0 a {{ nivelMaximo }})</label>
-              <input type="range" v-model.number="form.nivel" min="0" :max="nivelMaximo" class="slider-nivel" :disabled="!modoRapido" />
+              <label>Nivel de Experiencia</label>
+              <input type="range" v-model.number="form.nivel" min="0" :max="nivelMaximo" class="slider-nivel" :disabled="!modoRapido && !props.npcEditando" />
               <div class="txt-nivel">Nivel: <strong>{{ form.nivel }}</strong></div>
             </div>
             <div class="input-group">
@@ -268,9 +276,12 @@ onMounted(() => {
         </div>
 
         <div class="col-preview">
-          <div class="preview-card" v-if="modoRapido">
-            <h4>Previsualización (Automático)</h4>
-            <p class="txt-gris txt-centro mb-corto">Cambia a "Avanzado" para editar las estadísticas a mano.</p>
+          <div class="preview-card" v-if="modoRapido && !props.npcEditando">
+            <h4>Previsualización</h4>
+            <div class="box-retrato-preview">
+              <img v-if="form.imagen_url" :src="form.imagen_url" class="retrato-npc-preview" />
+              <div v-else class="retrato-fallback">👤</div>
+            </div>
             <div class="p-header">
               <div class="row-inputs centrado">
                 <div class="p-hp">❤️ HP: {{ form.hp_max }}</div>
@@ -289,16 +300,14 @@ onMounted(() => {
           </div>
 
           <div class="preview-card editando" v-else>
-            <h4 class="t-rojo">Edición Manual</h4>
-            <p class="txt-gris txt-centro mb-corto">Desvinculado del autocompletado. Edita libremente.</p>
-            
-            <div class="row-inputs mb-corto">
+            <h4 class="t-rojo">Edición Avanzada</h4>
+            <div class="row-inputs mb-corto mt-1">
               <div class="input-group"><label>HP Máx</label><input type="number" v-model="form.hp_max" class="input-form"/></div>
               <div class="input-group"><label>CA</label><input type="number" v-model="form.clase_armadura" class="input-form"/></div>
-              <div class="input-group"><label>Velocidad</label><input type="text" v-model="form.velocidad" class="input-form"/></div>
+              <div class="input-group"><label>Velocidad</label><input type="number" v-model="form.velocidad" class="input-form"/></div>
             </div>
 
-            <label class="mb-corto block">Estadísticas Principales</label>
+            <label class="mb-corto block mt-1">Estadísticas Principales</label>
             <div class="p-stats-grid manual">
               <div class="input-group mini"><label>STR</label><input type="number" v-model="form.fuerza" class="input-form txt-centro"/></div>
               <div class="input-group mini"><label>DEX</label><input type="number" v-model="form.destreza" class="input-form txt-centro"/></div>
@@ -312,15 +321,14 @@ onMounted(() => {
       </div>
 
       <div class="acciones-modal">
-        <button class="btn-cancelar" @click="emit('cerrar')">Descartar</button>
-        <button class="btn-accion-dm dorado" @click="procesarYGuardar">✨ Sellar e Invocar NPC</button>
+        <button class="btn-cancelar" @click="emit('cerrar')">Cancelar</button>
+        <button class="btn-accion-dm dorado" @click="procesarYGuardar">✨ {{ props.npcEditando ? 'Guardar Cambios' : 'Sellar e Invocar' }}</button>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* LOS MISMOS ESTILOS QUE YA TENÍAS COPIADOS EN EL PASO ANTERIOR VAN AQUÍ */
 .form-grande { width: 850px !important; max-width: 95vw; background: #0a0a0c; border: 2px solid #334155; border-radius: 12px; padding: 2rem; }
 .header-modal-creacion { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 0.8rem; margin-bottom: 1.5rem; }
 .header-modal-creacion h3 { margin: 0; color: #facc15; font-family: 'Cinzel', serif; font-size: 1.5rem; }
@@ -332,6 +340,7 @@ onMounted(() => {
 .centrado { justify-content: center; }
 .block { display: block; }
 .mb-corto { margin-bottom: 0.5rem; }
+.mt-1 { margin-top: 10px; }
 .txt-centro { text-align: center; }
 .input-group { flex: 1; display: flex; flex-direction: column; gap: 0.3rem; }
 .input-group.mini label { font-size: 0.7rem; color: #facc15; text-align: center;}
@@ -360,4 +369,7 @@ onMounted(() => {
 .p-stat span { color: white; font-weight: bold; font-size: 1.1rem; }
 .btn-cancelar { background: transparent; border: 1px solid #475569; color: #f1f5f9; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-family: 'Cinzel', serif; transition: 0.2s; }
 .btn-cancelar:hover { background: rgba(71, 85, 105, 0.3); color: white; }
+.box-retrato-preview { width: 100%; height: 110px; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
+.retrato-npc-preview { width: 90px; height: 90px; object-fit: cover; border-radius: 50%; border: 2px solid #3b82f6; }
+.retrato-fallback { font-size: 3.5rem; background: #111; width: 90px; height: 90px; display: flex; justify-content: center; align-items: center; border-radius: 50%; border: 2px dashed #334155; }
 </style>
