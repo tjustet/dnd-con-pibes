@@ -5,7 +5,7 @@ import { useRoute } from 'vue-router'
 const props = defineProps({
   tiendaFijaId: { type: String, default: null },
   tiendaTipo: { type: String, default: '' },
-  npcEditando: { type: Object, default: null } // NUEVO: Recibe el NPC si estamos editando
+  npcEditando: { type: Object, default: null }
 })
 
 const emit = defineEmits(['cerrar', 'guardar-npc'])
@@ -13,8 +13,8 @@ const supabase = useSupabaseClient()
 const route = useRoute()
 
 const modoRapido = ref(true)
+const excepcionLimiteNivel = ref(false)
 
-const razas = ['Humano', 'Enano', 'Elfo', 'Orco', 'Mediano', 'Gnomo', 'Dracónido']
 const trabajosBase = [
   'Herrero', 'Carpintero', 'Sastre', 'Joyero', 'Alfarero', 'Mercader',
   'Alquimista', 'Mago', 'Tabernero', 'Posadero', 'Panadero', 'Carnicero',
@@ -24,33 +24,246 @@ const trabajosBase = [
 const trabajosOrdenados = ref([...trabajosBase])
 const alineamientos = ['Leal Bueno', 'Neutral Bueno', 'Caótico Bueno', 'Leal Neutral', 'Neutral', 'Caótico Neutral', 'Leal Malvado', 'Neutral Malvado', 'Caótico Malvado']
 
+// PEGAR AQUÍ EL modRaza QUE TE DÉ LA OTRA IA
 const modRaza = {
+  'Aarakocra': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Aasimar': { str: 0, dex: 0, con: 0, int: 0, wis: 1, cha: 2 },
+  'Aasimar(Azote)': { str: 0, dex: 0, con: 1, int: 0, wis: 0, cha: 2 },
+  'Aasimar(Caído)': { str: 1, dex: 0, con: 0, int: 0, wis: 0, cha: 2 },
+  'Aasimar(Protector)': { str: 0, dex: 0, con: 0, int: 0, wis: 1, cha: 2 },
+  'Bugbear': { str: 2, dex: 1, con: 0, int: 0, wis: 0, cha: 0 },
+  'Cambiante': { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 2 },
+  'Cambiaformas(Caza Salvaje)': { str: 0, dex: 1, con: 0, int: 0, wis: 2, cha: 0 },
+  'Cambiaformas(Diente Largo)': { str: 2, dex: 1, con: 0, int: 0, wis: 0, cha: 0 },
+  'Cambiaformas(Paso Veloz)': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1 },
+  'Cambiaformas(Piel Bestial)': { str: 1, dex: 0, con: 2, int: 0, wis: 0, cha: 0 },
+  'Centauro': { str: 2, dex: 0, con: 0, int: 0, wis: 1, cha: 0 },
+  'Dracónido': { str: 2, dex: 0, con: 0, int: 0, wis: 0, cha: 1 },
+  'Dragonborn': { str: 2, dex: 0, con: 0, int: 0, wis: 0, cha: 1 },
+  'Dragonborn(Ravenite)': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0 },
+  'Dragonborn(Sangre de Dragón)': { str: 0, dex: 0, con: 0, int: 2, wis: 0, cha: 1 },
+  'Elfo(Aereni)': { str: 0, dex: 2, con: 0, int: 1, wis: 0, cha: 0 },
+  'Elfo(Alto)': { str: 0, dex: 2, con: 0, int: 1, wis: 0, cha: 0 },
+  'Elfo(Bosque)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Elfo(Drow)': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1 },
+  'Elfo(Eladrin)': { str: 0, dex: 2, con: 0, int: 1, wis: 0, cha: 0 },
+  'Elfo(Marca de Sombra)': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1 },
+  'Elfo(Mar)': { str: 0, dex: 2, con: 1, int: 0, wis: 0, cha: 0 },
+  'Elfo(Pálido)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Elfo(Shadar-kai)': { str: 0, dex: 2, con: 1, int: 0, wis: 0, cha: 0 },
+  'Elfo(Valenar)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Enano(Colina)': { str: 0, dex: 0, con: 2, int: 0, wis: 1, cha: 0 },
+  'Enano(Duergar)': { str: 1, dex: 0, con: 2, int: 0, wis: 0, cha: 0 },
+  'Enano(Marca de Protección)': { str: 0, dex: 0, con: 2, int: 1, wis: 0, cha: 0 },
+  'Enano(Montaña)': { str: 2, dex: 0, con: 2, int: 0, wis: 0, cha: 0 },
+  'Firbolg': { str: 1, dex: 0, con: 0, int: 0, wis: 2, cha: 0 },
+  'Forjado en Guerra': { str: 1, dex: 0, con: 2, int: 0, wis: 0, cha: 0 },
+  'Genasi(Agua)': { str: 0, dex: 0, con: 2, int: 0, wis: 1, cha: 0 },
+  'Genasi(Aire)': { str: 0, dex: 1, con: 2, int: 0, wis: 0, cha: 0 },
+  'Genasi(Fuego)': { str: 0, dex: 0, con: 2, int: 1, wis: 0, cha: 0 },
+  'Genasi(Tierra)': { str: 1, dex: 0, con: 2, int: 0, wis: 0, cha: 0 },
+  'Gith(Githyanki)': { str: 2, dex: 0, con: 0, int: 1, wis: 0, cha: 0 },
+  'Gith(Githzerai)': { str: 0, dex: 0, con: 0, int: 1, wis: 2, cha: 0 },
+  'Gnomo(Bosque)': { str: 0, dex: 1, con: 0, int: 2, wis: 0, cha: 0 },
+  'Gnomo(Marca de Escritura)': { str: 0, dex: 0, con: 0, int: 2, wis: 0, cha: 1 },
+  'Gnomo(Profundo)': { str: 0, dex: 1, con: 0, int: 2, wis: 0, cha: 0 },
+  'Gnomo(Roca)': { str: 0, dex: 0, con: 1, int: 2, wis: 0, cha: 0 },
+  'Gnomo(Svirfneblin)': { str: 0, dex: 1, con: 0, int: 2, wis: 0, cha: 0 },
+  'Goblin': { str: 0, dex: 2, con: 1, int: 0, wis: 0, cha: 0 },
+  'Goblin(Dankwood)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Goliat': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0 },
+  'Grung': { str: 0, dex: 2, con: 1, int: 0, wis: 0, cha: 0 },
+  'Hobgoblin': { str: 0, dex: 0, con: 2, int: 1, wis: 0, cha: 0 },
   'Humano': { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 },
-  'Enano': { str: 2, dex: -1, con: 2, int: 0, wis: 1, cha: -1 },
-  'Elfo': { str: -1, dex: 2, con: -1, int: 1, wis: 1, cha: 1 },
-  'Orco': { str: 3, dex: 0, con: 2, int: -2, wis: -1, cha: -2 },
-  'Mediano': { str: -2, dex: 2, con: 0, int: 0, wis: 1, cha: 2 },
-  'Gnomo': { str: -1, dex: 1, con: 0, int: 2, wis: 0, cha: 1 },
-  'Dracónido': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 1 }
-}
+  'Humano(Marca de Centinela)': { str: 0, dex: 0, con: 2, int: 0, wis: 1, cha: 0 },
+  'Humano(Marca de Creación)': { str: 0, dex: 1, con: 0, int: 2, wis: 0, cha: 0 },
+  'Humano(Marca de Descubrimiento)': { str: 0, dex: 2, con: 0, int: 1, wis: 0, cha: 0 },
+  'Humano(Marca de Manejo)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Humano(Marca de Paso)': { str: 0, dex: 2, con: 1, int: 0, wis: 0, cha: 0 },
+  'Humano(Variante)': { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 },
+  'Híbrido Simic': { str: 0, dex: 0, con: 2, int: 1, wis: 0, cha: 0 },
+  'Kalashtar': { str: 0, dex: 0, con: 0, int: 0, wis: 2, cha: 1 },
+  'Kenku': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Kobold': { str: -2, dex: 2, con: 0, int: 0, wis: 0, cha: 0 },
+  'Lagarto': { str: 0, dex: 0, con: 2, int: 0, wis: 1, cha: 0 },
+  'Leonin': { str: 1, dex: 0, con: 2, int: 0, wis: 0, cha: 0 },
+  'Locathah': { str: 2, dex: 1, con: 0, int: 0, wis: 0, cha: 0 },
+  'Loxodon': { str: 0, dex: 0, con: 2, int: 0, wis: 1, cha: 0 },
+  'Mediano(Lotusden)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Mediano(Marca de Hospitalidad)': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1 },
+  'Mediano(Marca de Sanación)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Mediano(Pieligero)': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1 },
+  'Mediano(Robusto)': { str: 0, dex: 2, con: 1, int: 0, wis: 0, cha: 0 },
+  'Mediano(Sabio Fantasma)': { str: 0, dex: 2, con: 0, int: 0, wis: 1, cha: 0 },
+  'Medioelfo': { str: 0, dex: 1, con: 0, int: 1, wis: 0, cha: 2 },
+  'Medioelfo(Acuático)': { str: 1, dex: 0, con: 0, int: 0, wis: 0, cha: 2 },
+  'Medioelfo(Alto)': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 },
+  'Medioelfo(Bosque)': { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 2 },
+  'Medioelfo(Drow)': { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 2 },
+  'Medioelfo(Marca de Detección)': { str: 0, dex: 0, con: 0, int: 1, wis: 2, cha: 0 },
+  'Medioelfo(Marca de Tormenta)': { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 2 },
+  'MedioOrco': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0 },
+  'MedioOrco(Marca de Descubrimiento)': { str: 2, dex: 0, con: 0, int: 0, wis: 1, cha: 0 },
+  'Minotauro': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0 },
+  'Orco': { str: 2, dex: 0, con: 1, int: 0, wis: 0, cha: 0 },
+  'Sátiro': { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 2 },
+  'Tabaxi': { str: 0, dex: 2, con: 0, int: 0, wis: 0, cha: 1 },
+  'Tiefling': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 },
+  'Tiefling(Asmodeus)': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 },
+  'Tiefling(Baalzebul)': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 },
+  'Tiefling(Dispater)': { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 2 },
+  'Tiefling(Fierna)': { str: 0, dex: 0, con: 0, int: 0, wis: 1, cha: 2 },
+  'Tiefling(Glasya)': { str: 0, dex: 1, con: 0, int: 0, wis: 0, cha: 2 },
+  'Tiefling(Levistus)': { str: 0, dex: 0, con: 1, int: 0, wis: 0, cha: 2 },
+  'Tiefling(Mammon)': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 },
+  'Tiefling(Mephistopheles)': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 },
+  'Tiefling(Variante)': { str: 0, dex: 2, con: 0, int: 1, wis: 0, cha: 0 },
+  'Tiefling(Zariel)': { str: 1, dex: 0, con: 0, int: 0, wis: 0, cha: 2 },
+  'Tortuga': { str: 2, dex: 0, con: 0, int: 0, wis: 1, cha: 0 },
+  'Tritón': { str: 1, dex: 0, con: 1, int: 0, wis: 0, cha: 1 },
+  'Vedalken': { str: 0, dex: 0, con: 0, int: 2, wis: 1, cha: 0 },
+  'Verdan': { str: 0, dex: 0, con: 2, int: 0, wis: 0, cha: 1 },
+  'Yuan-Ti de Sangre Pura': { str: 0, dex: 0, con: 0, int: 1, wis: 0, cha: 2 }
+};
 
+// PEGAR AQUÍ EL modTrabajo QUE TE DÉ LA OTRA IA
 const modTrabajo = {
-  'Herrero': { principal: 'str', secundaria: 'con' },
-  'Alquimista': { principal: 'int', secundaria: 'dex' },
-  'Mercader': { principal: 'cha', secundaria: 'wis' },
-  'Tabernero': { principal: 'cha', secundaria: 'con' },
-  'Guardia': { principal: 'str', secundaria: 'dex' },
-  'Ladrón': { principal: 'dex', secundaria: 'cha' },
+  'Agente': { principal: 'cha', secundaria: 'int' },
+  'Alfarero': { principal: 'dex', secundaria: 'con' },
+  'Alquimista': { principal: 'int', secundaria: 'wis' },
+  'Banquero': { principal: 'int', secundaria: 'cha' },
+  'Caballerizo': { principal: 'wis', secundaria: 'str' },
+  'Capitán': { principal: 'cha', secundaria: 'str' },
+  'Carnicero': { principal: 'str', secundaria: 'con' },
+  'Carpintero': { principal: 'str', secundaria: 'dex' },
+  'Cartógrafo': { principal: 'int', secundaria: 'dex' },
+  'Clérigo': { principal: 'wis', secundaria: 'cha' },
   'Erudito': { principal: 'int', secundaria: 'wis' },
-  'Mago': { principal: 'int', secundaria: 'dex' },
-  'Clérigo': { principal: 'wis', secundaria: 'con' }
-}
+  'Escribano': { principal: 'int', secundaria: 'dex' },
+  'Guardia': { principal: 'str', secundaria: 'con' },
+  'Herrero': { principal: 'str', secundaria: 'con' },
+  'Joyero': { principal: 'dex', secundaria: 'int' },
+  'Juez': { principal: 'int', secundaria: 'wis' },
+  'Ladrón': { principal: 'dex', secundaria: 'cha' },
+  'Mago': { principal: 'int', secundaria: 'wis' },
+  'Mercader': { principal: 'cha', secundaria: 'wis' },
+  'Panadero': { principal: 'con', secundaria: 'dex' },
+  'Político': { principal: 'cha', secundaria: 'int' },
+  'Posadero': { principal: 'cha', secundaria: 'con' },
+  'Sastre': { principal: 'dex', secundaria: 'int' },
+  'Servidor': { principal: 'dex', secundaria: 'con' },
+  'Tabernero': { principal: 'cha', secundaria: 'con' },
+  'Veterano': { principal: 'str', secundaria: 'con' }
+};
 
+// PEGAR AQUÍ LA afinidad QUE TE DÉ LA OTRA IA
 const afinidad = {
-  'Enano-Herrero': 10, 'Elfo-Herrero': 3, 'Humano-Herrero': 8,
-  'Elfo-Alquimista': 10, 'Orco-Alquimista': 1, 'Gnomo-Alquimista': 10,
-  'Orco-Guardia': 10, 'Mediano-Guardia': 4
-}
+  'Aarakocra-Herrero': 2,
+  'Aasimar-Clérigo': 10,
+  'Aasimar-Juez': 9,
+  'Bugbear-Banquero': 2,
+  'Bugbear-Erudito': 2,
+  'Bugbear-Ladrón': 9,
+  'Bugbear-Veterano': 8,
+  'Cambiante-Agente': 10,
+  'Cambiante-Ladrón': 9,
+  'Centauro-Caballerizo': 1,
+  'Centauro-Tabernero': 2,
+  'Dracónido-Capitán': 9,
+  'Dracónido-Veterano': 9,
+  'Dragonborn-Capitán': 9,
+  'Dragonborn-Veterano': 9,
+  'Elfo(Alto)-Erudito': 9,
+  'Elfo(Alto)-Mago': 10,
+  'Elfo(Bosque)-Caballerizo': 8,
+  'Elfo(Bosque)-Cartógrafo': 9,
+  'Elfo(Drow)-Alfarero': 2,
+  'Enano(Colina)-Herrero': 9,
+  'Enano(Duergar)-Herrero': 9,
+  'Enano(Marca de Protección)-Banquero': 8,
+  'Enano(Marca de Protección)-Guardia': 9,
+  'Enano(Montaña)-Herrero': 10,
+  'Enano(Montaña)-Joyero': 9,
+  'Enano(Montaña)-Veterano': 9,
+  'Firbolg-Banquero': 1,
+  'Firbolg-Carpintero': 9,
+  'Firbolg-Político': 2,
+  'Forjado en Guerra-Guardia': 10,
+  'Forjado en Guerra-Veterano': 10,
+  'Genasi(Fuego)-Alquimista': 9,
+  'Genasi(Fuego)-Herrero': 9,
+  'Gith(Githyanki)-Erudito': 2,
+  'Gith(Githyanki)-Veterano': 8,
+  'Gnomo(Marca de Escritura)-Cartógrafo': 9,
+  'Gnomo(Marca de Escritura)-Escribano': 10,
+  'Gnomo(Profundo)-Joyero:': 9,
+  'Gnomo(Roca)-Alquimista': 10,
+  'Gnomo(Roca)-Joyero': 10,
+  'Goblin-Agente': 8,
+  'Goblin-Banquero': 2,
+  'Goblin-Juez': 1,
+  'Goblin-Ladrón': 10,
+  'Goblin-Político': 2,
+  'Goliat-Escribano': 2,
+  'Goliat-Guardia': 9,
+  'Goliat-Joyero': 2,
+  'Goliat-Sastre': 1,
+  'Goliat-Veterano': 10,
+  'Grung-Tabernero': 1,
+  'Hobgoblin-Capitán': 10,
+  'Hobgoblin-Guardia': 9,
+  'Hobgoblin-Veterano': 9,
+  'Humano(Marca de Creación)-Alfarero': 9,
+  'Humano(Marca de Creación)-Herrero': 10,
+  'Kenku-Escribano': 10,
+  'Kenku-Juez': 1,
+  'Kenku-Ladrón': 9,
+  'Kenku-Político': 1,
+  'Kobold-Banquero': 2,
+  'Kobold-Capitán': 2,
+  'Kobold-Juez': 2,
+  'Kobold-Ladrón': 8,
+  'Lagarto-Banquero': 1,
+  'Lagarto-Carnicero': 9,
+  'Lagarto-Político': 1,
+  'Lagarto-Tabernero': 2,
+  'Locathah-Herrero': 1,
+  'Locathah-Panadero': 2,
+  'Loxodon-Clérigo': 8,
+  'Mediano(Marca de Hospitalidad)-Posadero': 10,
+  'Mediano(Marca de Hospitalidad)-Tabernero': 10,
+  'Mediano(Marca de Sanación)-Clérigo': 9,
+  'Mediano(Pieligero)-Panadero': 10,
+  'Mediano(Pieligero)-Posadero': 9,
+  'Mediano(Pieligero)-Tabernero': 10,
+  'Mediano(Robusto)-Panadero': 9,
+  'MedioOrco-Carnicero': 8,
+  'MedioOrco-Escribano': 2,
+  'MedioOrco-Guardia': 9,
+  'MedioOrco-Joyero': 2,
+  'MedioOrco-Sastre': 2,
+  'MedioOrco-Veterano': 10,
+  'Minotauro-Joyero': 2,
+  'Minotauro-Juez': 2,
+  'Minotauro-Sastre': 2,
+  'Orco-Banquero': 2,
+  'Orco-Erudito': 1,
+  'Orco-Juez': 1,
+  'Orco-Mago': 1,
+  'Orco-Político': 2,
+  'Tabaxi-Agente': 8,
+  'Tabaxi-Ladrón': 9,
+  'Tabaxi-Mercader': 8,
+  'Tiefling-Agente': 9,
+  'Tiefling-Ladrón': 8,
+  'Tiefling-Político': 8,
+  'Tortuga-Mago': 3,
+  'Tritón-Capitán': 8,
+  'Vedalken-Alquimista': 9,
+  'Vedalken-Erudito': 9,
+  'Yuan-Ti de Sangre Pura-Agente': 10,
+  'Yuan-Ti de Sangre Pura-Político': 9
+};
 
 const form = ref({
   nombre: '', raza: 'Humano', trabajo: 'Mercader', nivel: 0, alineamiento: 'Neutral', notas: '', tiendaDestino: props.tiendaFijaId || '',
@@ -60,6 +273,24 @@ const form = ref({
 })
 
 const tiendasDisponibles = ref([])
+
+// --- NUEVA LÓGICA: SEPARAR RAZAS RECOMENDADAS ---
+const opcionesRaza = computed(() => {
+  const trabajoAct = form.value.trabajo
+  let recomendadas = []
+  let otras = []
+
+  for (const raza in modRaza) {
+    const clave = `${raza}-${trabajoAct}`
+    const maxNivel = afinidad[clave] !== undefined ? afinidad[clave] : 5
+    if (maxNivel > 5) recomendadas.push(raza)
+    else otras.push(raza)
+  }
+
+  // Las ordenamos alfabéticamente para que queden prolijas
+  return { recomendadas: recomendadas.sort(), otras: otras.sort() }
+})
+// --------------------------------------------------
 
 const mapearTiendaATrabajo = (tipo) => {
   if (!tipo) return 'Mercader'
@@ -110,17 +341,20 @@ const cargarTiendas = async () => {
 }
 
 const nivelMaximo = computed(() => {
+  if (excepcionLimiteNivel.value) return 10
   const clave = `${form.value.raza}-${form.value.trabajo}`
   return afinidad[clave] !== undefined ? afinidad[clave] : 5
 })
 
-watch([() => form.value.raza, () => form.value.trabajo], () => {
+watch([() => form.value.raza, () => form.value.trabajo, excepcionLimiteNivel], () => {
   if (form.value.nivel > nivelMaximo.value) form.value.nivel = nivelMaximo.value
 })
 
 const statsGeneradas = computed(() => {
   let base = { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }
-  const razaMod = modRaza[form.value.raza]; for (let s in razaMod) base[s] += razaMod[s]
+  const razaMod = modRaza[form.value.raza] || { str: 0, dex: 0, con: 0, int: 0, wis: 0, cha: 0 } 
+  for (let s in razaMod) base[s] += razaMod[s]
+  
   const trabajoMod = modTrabajo[form.value.trabajo] || { principal: 'str', secundaria: 'dex' }
   const nivel = form.value.nivel
 
@@ -166,14 +400,13 @@ const procesarYGuardar = async () => {
     sabiduria: form.value.sabiduria,
     carisma: form.value.carisma,
     hp_max: form.value.hp_max,
-    hp_actual: form.value.hp_max, // Asumimos que se cura al guardar
+    hp_actual: form.value.hp_max, 
     clase_armadura: form.value.clase_armadura,
     velocidad: parseInt(form.value.velocidad) || 30,
     notas: form.value.notas,
     inventario: props.npcEditando ? props.npcEditando.inventario : []
   }
 
-  // SI HAY UN NPC EDITANDO, ACTUALIZAMOS. SI NO, INSERTAMOS.
   if (props.npcEditando) {
     const { data, error } = await supabase.from('characters').update(npcFinal).eq('id', props.npcEditando.id).select().single()
     if (error) return alert("Error al editar: " + error.message)
@@ -182,9 +415,7 @@ const procesarYGuardar = async () => {
     const { data, error } = await supabase.from('characters').insert(npcFinal).select().single()
     if (error) return alert("Error al guardar: " + error.message)
     
-    // Solo vinculamos tienda si es uno nuevo
     if (form.value.tiendaDestino && !props.tiendaFijaId) {
-      // Nota: Esta lógica de vinculación externa está, pero en la tienda se maneja por emit.
       await supabase.from('tiendas_sesion').update({ npc_id: data.id }).eq('id', form.value.tiendaDestino)
     }
     emit('guardar-npc', data)
@@ -193,7 +424,7 @@ const procesarYGuardar = async () => {
 
 onMounted(() => { 
   if (props.npcEditando) {
-    modoRapido.value = false // Forzamos vista avanzada para editar todo manual
+    modoRapido.value = false 
     form.value = {
       nombre: props.npcEditando.nombre_pj,
       raza: props.npcEditando.raza,
@@ -208,6 +439,10 @@ onMounted(() => {
       hp_max: props.npcEditando.hp_max, clase_armadura: props.npcEditando.clase_armadura,
       velocidad: props.npcEditando.velocidad || 30
     }
+    const clave = `${props.npcEditando.raza}-${props.npcEditando.clase}`
+    const maxTeorico = afinidad[clave] !== undefined ? afinidad[clave] : 5
+    if (props.npcEditando.nivel > maxTeorico) excepcionLimiteNivel.value = true
+
   } else {
     prepararOpcionesTrabajo()
   }
@@ -220,7 +455,8 @@ onMounted(() => {
     <div class="modal-dm-sheet form-grande">
       
       <div class="header-modal-creacion">
-        <h3>{{ props.npcEditando ? '✏️ Editar Empleado/NPC' : '✨ Crear Personaje Aliado' }}</h3>
+        <h3>{{ props.npcEditando ? '✏️ Editando Personaje' : '✨ Crear Personaje Aliado' }}</h3>
+        
         <button v-if="!props.npcEditando" @click="modoRapido = !modoRapido" class="btn-toggle-modo" :class="{'modo-avanzado': !modoRapido}">
           {{ modoRapido ? '⚙️ Pasar a Avanzado' : '✨ Volver a Rápido' }}
         </button>
@@ -249,19 +485,36 @@ onMounted(() => {
                 <option v-for="t in trabajosOrdenados" :key="t" :value="t">{{ t }}</option>
               </select>
             </div>
+            
             <div class="input-group">
               <label>Raza</label>
               <select v-model="form.raza" class="input-form" :disabled="!modoRapido && !props.npcEditando">
-                <option v-for="r in razas" :key="r" :value="r">{{ r }}</option>
+                <optgroup v-if="opcionesRaza.recomendadas.length > 0" label="🌟 Destacados en este oficio">
+                  <option v-for="r in opcionesRaza.recomendadas" :key="r" :value="r">{{ r }}</option>
+                </optgroup>
+                
+                <optgroup label="Resto de Razas">
+                  <option v-for="r in opcionesRaza.otras" :key="r" :value="r">{{ r }}</option>
+                </optgroup>
               </select>
             </div>
           </div>
 
           <div class="row-inputs">
             <div class="input-group">
-              <label>Nivel de Experiencia</label>
+              <div class="flex-between mb-corto">
+                <label>Nivel de Experiencia</label>
+                <label class="toggle-excepcion" title="Permite ignorar el límite de raza/clase">
+                  <input type="checkbox" v-model="excepcionLimiteNivel" :disabled="!modoRapido && !props.npcEditando" />
+                  <span>🌟 Excepción</span>
+                </label>
+              </div>
               <input type="range" v-model.number="form.nivel" min="0" :max="nivelMaximo" class="slider-nivel" :disabled="!modoRapido && !props.npcEditando" />
-              <div class="txt-nivel">Nivel: <strong>{{ form.nivel }}</strong></div>
+              <div class="txt-nivel">
+                Nivel: <strong>{{ form.nivel }}</strong> 
+                <span class="txt-gris txt-chico" v-if="excepcionLimiteNivel">(Sin límite racial)</span>
+                <span class="txt-gris txt-chico" v-else>(Máx: {{ nivelMaximo }})</span>
+              </div>
             </div>
             <div class="input-group">
               <label>Alineamiento</label>
@@ -300,7 +553,7 @@ onMounted(() => {
           </div>
 
           <div class="preview-card editando" v-else>
-            <h4 class="t-rojo">Edición Avanzada</h4>
+            <h4 class="t-rojo">Control Estadístico de Ficha</h4>
             <div class="row-inputs mb-corto mt-1">
               <div class="input-group"><label>HP Máx</label><input type="number" v-model="form.hp_max" class="input-form"/></div>
               <div class="input-group"><label>CA</label><input type="number" v-model="form.clase_armadura" class="input-form"/></div>
@@ -321,7 +574,7 @@ onMounted(() => {
       </div>
 
       <div class="acciones-modal">
-        <button class="btn-cancelar" @click="emit('cerrar')">Cancelar</button>
+        <button class="btn-cancelar" @click="emit('cerrar')">{{ props.npcEditando ? 'Cancelar Cambios' : 'Descartar' }}</button>
         <button class="btn-accion-dm dorado" @click="procesarYGuardar">✨ {{ props.npcEditando ? 'Guardar Cambios' : 'Sellar e Invocar' }}</button>
       </div>
     </div>
@@ -349,7 +602,18 @@ onMounted(() => {
 .input-form:focus { border-color: #3b82f6; }
 .input-form:disabled { opacity: 0.5; cursor: not-allowed; }
 .txt-area { resize: vertical; min-height: 80px; }
-.slider-nivel { width: 100%; accent-color: #facc15; margin-top: 0.5rem; }
+
+optgroup { background: #111; color: #facc15; font-family: 'Cinzel', serif; font-weight: bold; font-style: normal; }
+optgroup option { color: white; font-family: 'Inter', sans-serif; font-weight: normal; }
+
+.flex-between { display: flex; justify-content: space-between; align-items: center; }
+.toggle-excepcion { display: flex; align-items: center; gap: 5px; cursor: pointer; background: rgba(245, 158, 11, 0.1); padding: 2px 8px; border-radius: 12px; border: 1px solid #b45309; transition: 0.2s; }
+.toggle-excepcion:hover { background: rgba(245, 158, 11, 0.2); }
+.toggle-excepcion input { accent-color: #facc15; cursor: pointer; }
+.toggle-excepcion span { font-size: 0.7rem; color: #facc15; font-weight: bold; }
+.txt-chico { font-size: 0.75rem; }
+
+.slider-nivel { width: 100%; accent-color: #facc15; margin-top: 0.2rem; }
 .txt-nivel { color: #cbd5e1; font-size: 0.9rem; margin-top: 0.3rem; }
 .t-gris { color: #cbd5e1; }
 .txt-gris { color: #94a3b8; }

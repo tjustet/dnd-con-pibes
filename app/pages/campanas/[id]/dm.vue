@@ -1,8 +1,8 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
-// IMPORTACIONES EXPRESAS DE COMPONENTES (Cambiá la ruta si las pusiste en otro lado)
-import GestorTiendasDM from '../../components/GestorTiendasDM.vue'
+// IMPORTACIONES EXPRESAS DE COMPONENTES
+import GestorTiendasDM from '../../components/dm/GestorTiendasDM.vue' // IMPORTACIÓN CONFIRMADA
 import DmTrackerIniciativa from '../../components/dm/DmTrackerIniciativa.vue'
 import DmMesaDados from '../../components/dm/DmMesaDados.vue'
 import DmDrawerDetalles from '../../components/dm/DmDrawerDetalles.vue'
@@ -399,7 +399,7 @@ onMounted(() => { cargarMesaDM() })
           <button @click="modalVisionAbierto = true" class="btn-ghost">👁️ Proyectar Imagen</button>
           <button v-if="!combateActivo" @click="prepararIniciativa" class="btn-accion-dm dorado">⚔️ INICIATIVA</button>
           <button v-else @click="terminarCombate" class="btn-accion-dm rojo">🛑 Fin Combate</button>
-          <button class="btn-control tienda" @click="modalTiendasAbierto = true">🏪 Gestión de Tiendas</button>
+          <button class="btn-control tienda" @click="modalTiendasAbierto = true">🏰 Ciudad</button>
           <button @click="modalAgregarJugadorAbierto = true" class="btn-accion-dm azul">+ Añadir PJ</button>
           <button @click="modalAgregarNpcAbierto = true" class="btn-accion-dm verde">+ Añadir NPC</button>
           <button @click="modalAgregarEnemigoAbierto = true" class="btn-accion-dm rojo">+ Añadir Enemigo</button>
@@ -597,7 +597,7 @@ onMounted(() => { cargarMesaDM() })
         <div class="lista-vincular-grande">
           <div v-for="n in npcsFiltrados" :key="n.id" class="item-vincular-gigante borde-verde">
             <img v-if="n.imagen_url" :src="n.imagen_url" class="img-add-grande" />
-            <div v-else class="img-add-fallback verde">👤</div>
+            <div v-else class="img-add-fallback">👤</div>
             <div class="info-add-grande">
               <h4>{{ n.nombre_pj }}</h4>
               <p>Clase: {{ n.clase || '-' }} | CR: {{ n.dificultad || '-' }}</p>
