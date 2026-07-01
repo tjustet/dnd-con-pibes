@@ -63,3 +63,42 @@ const tirarDano = (atk) => emit('lanzarDado', { titulo: `Daño: ${atk.nombre}`, 
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 1. El scroll se queda SOLO en la lista de ataques y conjuros */
+.lista-ataques {
+  max-height: 500px;    /* Define qué tan larga es la caja antes de scrollear. Súbelo si la quieres más larga */
+  overflow-y: auto;     /* Activa el scroll interno */
+  padding-right: 10px;  /* Evita que el scroll tape el texto */
+  margin-top: 15px;
+  
+  /* Esto permite que estires la caja SOLO de los ataques hacia abajo */
+  resize: vertical;
+  min-height: 300px;
+}
+
+/* 2. Hacemos que cada "cuadrado" de ataque sea más grande y espacioso */
+.bloque-ataque {
+  padding: 20px;         /* Aumenta el espacio interno de cada tarjeta */
+  margin-bottom: 15px;   /* Separa más las tarjetas entre sí */
+  min-height: 12rem;     /* Fuerza a que cada tarjeta sea más alta por defecto */
+  
+  /* Mantiene los elementos internos bien distribuidos con el nuevo tamaño */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* 3. Estilo del scrollbar para que encaje en la sección */
+.lista-ataques::-webkit-scrollbar {
+  width: 8px;
+}
+.lista-ataques::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+.lista-ataques::-webkit-scrollbar-thumb {
+  background: #cba153;
+  border-radius: 4px;
+}
+</style>
