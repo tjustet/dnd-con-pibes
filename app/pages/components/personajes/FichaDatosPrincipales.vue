@@ -1,5 +1,5 @@
 <script setup>
-import { computed } from 'vue'
+import { ref, computed } from 'vue'
 
 const props = defineProps({
   pj: { type: Object, required: true },
@@ -13,12 +13,23 @@ const hpPorcentaje = computed(() => {
 })
 
 const reiniciarMuerte = () => { props.pj.salvaciones_exito = 0; props.pj.salvaciones_fallo = 0 }
+
+// Lightbox de la imagen del personaje
+const imagenAmpliada = ref(false)
+const abrirImagen = () => { if (props.pj.imagen_url) imagenAmpliada.value = true }
+const cerrarImagen = () => { imagenAmpliada.value = false }
 </script>
 
 <template>
   <div class="panel-identidad">
     <div class="avatar-box">
-      <img v-if="pj.imagen_url" :src="pj.imagen_url" class="avatar-img" />
+      <img
+        v-if="pj.imagen_url"
+        :src="pj.imagen_url"
+        class="avatar-img"
+        :class="{ 'avatar-clickeable': !modoEdicion }"
+        @click="abrirImagen"
+      />
       <div v-else class="avatar-placeholder">🛡️</div>
       <input v-if="modoEdicion" v-model="pj.imagen_url" placeholder="URL imagen" class="input-fino mt-1" />
     </div>
@@ -96,4 +107,79 @@ const reiniciarMuerte = () => { props.pj.salvaciones_exito = 0; props.pj.salvaci
       </div>
     </div>
   </div>
+
+  <!-- Lightbox: imagen del personaje ampliada -->
+  <Teleport to="body">
+    <div v-if="imagenAmpliada" class="lightbox-overlay" @click="cerrarImagen">
+      <button class="lightbox-cerrar" @click.stop="cerrarImagen">✕</button>
+      <img :src="pj.imagen_url" class="lightbox-img" @click.stop />
+    </div>
+  </Teleport>
 </template>
+
+<style scoped>
+/* Mismo tamaño que tenía antes, pero sin recortar la imagen */
+.avatar-box {
+  width: 120px;
+}
+.avatar-img {
+  width: 100%;
+  height: 120px;
+  object-fit: contain;   /* pisa el "cover" global: se ve completa, con barras si hace falta */
+  background: #000;       /* rellena las barras laterales/superiores cuando la imagen no es cuadrada */
+  border-radius: 6px;
+  border: 1px solid #334155;
+}
+.avatar-clickeable {
+  cursor: zoom-in;
+  transition: 0.2s;
+}
+.avatar-clickeable:hover {
+  border-color: #facc15;
+  box-shadow: 0 0 12px rgba(250, 204, 21, 0.35);
+}
+
+/* Modal / lightbox */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.9);
+  backdrop-filter: blur(6px);
+  z-index: 999999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  animation: fadeInLightbox 0.2s ease-out;
+}
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 90vh;
+  object-fit: contain;
+  border: 3px solid #facc15;
+  border-radius: 10px;
+  box-shadow: 0 0 40px rgba(250, 204, 21, 0.4);
+}
+.lightbox-cerrar {
+  position: absolute;
+  top: 20px;
+  right: 30px;
+  background: transparent;
+  border: 1px solid #facc15;
+  color: #facc15;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: 0.2s;
+}
+.lightbox-cerrar:hover {
+  background: #facc15;
+  color: black;
+}
+@keyframes fadeInLightbox {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+</style>
