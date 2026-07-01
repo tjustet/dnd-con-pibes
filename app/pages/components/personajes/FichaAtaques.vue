@@ -15,6 +15,21 @@ const borrarAtaque = (index) => props.pj.ataques.splice(index, 1)
 
 const tirarHit = (atk) => emit('lanzarDado', { titulo: `Ataque: ${atk.nombre}`, cant: 1, caras: 20, bono: atk.bono })
 const tirarDano = (atk) => emit('lanzarDado', { titulo: `Daño: ${atk.nombre}`, cant: atk.cant_dados || 1, caras: atk.tipo_dado || 8, bono: atk.bono_dano, efecto: atk.efecto_aplicado })
+
+// Directiva local: hace que el textarea crezca automáticamente según su contenido
+const vAutoGrow = {
+  mounted(el) {
+    const ajustar = () => { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px' }
+    el.style.overflow = 'hidden'
+    ajustar()
+    el.addEventListener('input', ajustar)
+    el._ajustarAltura = ajustar
+  },
+  updated(el) {
+    // Por si el valor cambia por fuera del input (ej. al cargar datos)
+    if (el._ajustarAltura) el._ajustarAltura()
+  }
+}
 </script>
 
 <template>
@@ -54,7 +69,11 @@ const tirarDano = (atk) => emit('lanzarDado', { titulo: `Daño: ${atk.nombre}`, 
             </select>
           </div>
         </div>
-        <div class="ataque-desc"><label>DESCRIPCIÓN</label><textarea v-if="modoEdicion" v-model="atk.desc" rows="2"></textarea><p v-else class="texto-wrap">{{ atk.desc || 'Sin descripción.' }}</p></div>
+        <div class="ataque-desc">
+          <label>DESCRIPCIÓN</label>
+          <textarea v-if="modoEdicion" v-model="atk.desc" v-auto-grow rows="2"></textarea>
+          <p v-else class="texto-wrap">{{ atk.desc || 'Sin descripción.' }}</p>
+        </div>
         <div v-if="!modoEdicion && pj.tipo === 'pj'" class="overlay-ataque">
           <button @click="tirarHit(atk)" class="btn-tactico hit">🎯 Ataque</button>
           <button @click="tirarDano(atk)" class="btn-tactico dmg">🩸 Daño</button>
@@ -65,31 +84,31 @@ const tirarDano = (atk) => emit('lanzarDado', { titulo: `Daño: ${atk.nombre}`, 
 </template>
 
 <style scoped>
-/* 1. El scroll se queda SOLO en la lista de ataques y conjuros */
 .lista-ataques {
-  max-height: 500px;    /* Define qué tan larga es la caja antes de scrollear. Súbelo si la quieres más larga */
-  overflow-y: auto;     /* Activa el scroll interno */
-  padding-right: 10px;  /* Evita que el scroll tape el texto */
+  max-height: 650px;
+  overflow-y: auto;
+  padding-right: 10px;
   margin-top: 15px;
-  
-  /* Esto permite que estires la caja SOLO de los ataques hacia abajo */
   resize: vertical;
   min-height: 300px;
 }
 
-/* 2. Hacemos que cada "cuadrado" de ataque sea más grande y espacioso */
 .bloque-ataque {
-  padding: 20px;         /* Aumenta el espacio interno de cada tarjeta */
-  margin-bottom: 15px;   /* Separa más las tarjetas entre sí */
-  min-height: 12rem;     /* Fuerza a que cada tarjeta sea más alta por defecto */
-  
-  /* Mantiene los elementos internos bien distribuidos con el nuevo tamaño */
+  padding: 20px;
+  margin-bottom: 15px;
+  min-height: 12rem;
+  overflow: visible;
+  flex-shrink: 0;              /* 👈 clave: evita que la tarjeta se "aplaste" */
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
-/* 3. Estilo del scrollbar para que encaje en la sección */
+.ataque-desc textarea {
+  min-height: 2.4rem;
+  resize: none;
+}
+
 .lista-ataques::-webkit-scrollbar {
   width: 8px;
 }
