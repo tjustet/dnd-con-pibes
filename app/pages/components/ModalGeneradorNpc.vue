@@ -384,9 +384,12 @@ const calcularMod = (val) => { const m = Math.floor((val - 10) / 2); return m >=
 const procesarYGuardar = async () => {
   if (!form.value.nombre) return alert("El NPC necesita un nombre.")
   
+  // SOLUCIÓN: Validamos que la ID de la ruta no sea la palabra "nuevo" antes de mandarla a Supabase
+  const idCampanaValido = (route.params.id && route.params.id !== 'nuevo') ? route.params.id : null
+
   const npcFinal = {
     tipo: 'npc',
-    campaign_id: route.params.id,
+    campaign_id: idCampanaValido,
     nombre_pj: form.value.nombre,
     raza: form.value.raza,
     clase: form.value.trabajo,

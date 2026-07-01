@@ -51,7 +51,7 @@ const borrarCampana = async () => {
   const confirmacion = confirm("⚠️ ATENCIÓN: ¿Estás seguro de que deseas destruir esta campaña para siempre?\n\nEsto eliminará absolutamente todo: personajes, NPCs, enemigos, el historial de dados y el estado de la mesa. No hay vuelta atrás.")
   if (confirmacion) {
     await supabase.from('campaigns').delete().eq('id', route.params.id)
-    router.push('/campanas')
+    router.push('../../dashboard')
   }
 }
 
