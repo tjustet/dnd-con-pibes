@@ -72,12 +72,19 @@ const sugerenciaPrecio = computed(() => {
 
 const autoSeleccionarTiendas = () => {
   tiendasSeleccionadasParaCrear.value = []
-  const max = tamanos.find(t => t.id === formCiudad.value.tamano).maxTiendas
+  const maxSolicitado = tamanos.find(t => t.id === formCiudad.value.tamano).maxTiendas
+  const max = Math.min(maxSolicitado, categoriasTiendasPlan.length) // 🔒 nunca pedimos más de las que existen
+
   let opcionesBase = ['Mercado General', 'Taberna', 'Herrería', 'Templo', 'Posada']
   opcionesBase.forEach(t => { if(tiendasSeleccionadasParaCrear.value.length < max) tiendasSeleccionadasParaCrear.value.push(t) })
-  while(tiendasSeleccionadasParaCrear.value.length < max) {
+
+  let intentos = 0
+  const maxIntentos = 500 // 🔒 segundo seguro anti-loop infinito
+
+  while(tiendasSeleccionadasParaCrear.value.length < max && intentos < maxIntentos) {
     let r = categoriasTiendasPlan[Math.floor(Math.random() * categoriasTiendasPlan.length)]
     if(!tiendasSeleccionadasParaCrear.value.includes(r)) tiendasSeleccionadasParaCrear.value.push(r)
+    intentos++
   }
 }
 

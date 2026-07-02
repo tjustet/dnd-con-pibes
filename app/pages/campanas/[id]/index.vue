@@ -81,7 +81,7 @@ onMounted(() => {
             👁️ Entrar a la Mesa (DM)
           </button>
           <button @click="router.push(`/campanas/${route.params.id}/lugares`)" class="btn-herramienta">
-            🏪 Tiendas y Lugares
+            Ciudades
           </button>
         </div>
 
