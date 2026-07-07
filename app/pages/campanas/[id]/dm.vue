@@ -6,8 +6,7 @@ import GestorTiendasDM from '../../components/dm/GestorTiendasDM.vue' // IMPORTA
 import DmTrackerIniciativa from '../../components/dm/DmTrackerIniciativa.vue'
 import DmMesaDados from '../../components/dm/DmMesaDados.vue'
 import DmDrawerDetalles from '../../components/dm/DmDrawerDetalles.vue'
-
-import ModalGeneradorNpc from '../../components/ModalGeneradorNpc.vue'
+import NotasDM from './NotasDM.vue'
 
 // --- LÓGICA DE TIENDAS Y CARRITOS ---
 const modalTiendasAbierto = ref(false)
@@ -530,6 +529,9 @@ onMounted(() => { cargarMesaDM() })
             </div>
           </div>
         </div>
+
+        <NotasDM :campaignId="route.params.id" :pantallaCompleta="true" />
+
       </div>
     </div>
 

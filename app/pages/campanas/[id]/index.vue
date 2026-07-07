@@ -80,6 +80,9 @@ onMounted(() => {
           <button @click="router.push(`/campanas/${route.params.id}/dm`)" class="btn-dm-acceso">
             👁️ Entrar a la Mesa (DM)
           </button>
+          <button @click="router.push(`/campanas/${route.params.id}/NotasDM`)" class="btn-control">
+            📝 Notas del DM
+          </button>
           <button @click="router.push(`/campanas/${route.params.id}/lugares`)" class="btn-herramienta">
             Ciudades
           </button>
