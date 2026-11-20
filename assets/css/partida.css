@@ -113,3 +113,12 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 680px) and (pointer: coarse) {
   input:not([type=checkbox]):not([type=range]):not([type=color]), select, textarea { font-size: max(16px, 1em); }
 }
+
+.enlace-versiones {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #fde68a;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}

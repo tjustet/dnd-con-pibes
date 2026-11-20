@@ -86,6 +86,7 @@ const loginConGoogle = async () => {
         </svg>
         {{ ingresando ? 'Abriendo Google…' : 'Entrar con Google' }}
       </button>
+      <NuxtLink class="enlace-versiones" to="/versiones">Historial de versiones</NuxtLink>
     </div>
   </div>
 </template>

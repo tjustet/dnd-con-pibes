@@ -35,13 +35,13 @@ const toggleMusica = () => {
 
 // Pasamos el ID directamente como parámetro para no depender de user.value
 const cargarCampañasDM = async (dmId) => {
-  const { data, error } = await supabase.from('campaigns').select('*').eq('dm_id', dmId).order('created_at', { ascending: false })
+  const { data, error } = await supabase.from('campaigns').select('id, nombre_campanya, imagen_url').eq('dm_id', dmId).order('created_at', { ascending: false })
   if (error) throw error
   if (data) misCampañas.value = data
 }
 
 const cargarPersonajesJugador = async (email) => {
-  const { data, error } = await supabase.from('characters').select('*, campaigns(nombre_campanya)').eq('player_email', email)
+  const { data, error } = await supabase.from('characters').select('id, nombre_pj, clase, raza, nivel, imagen_url, campaigns(nombre_campanya)').eq('player_email', email)
   if (error) throw error
   if (data) misPersonajes.value = data
 }
@@ -83,7 +83,7 @@ const cargarPerfilFuerte = async () => {
 
     // 2. Buscamos TU fila exacta por email y la pedimos como objeto único (.single())
     const { data, error } = await supabase.from('profiles')
-      .select('*')
+      .select('id, nombre, is_dm')
       .eq('email', userEmail)
       .single() 
     
@@ -96,10 +96,8 @@ const cargarPerfilFuerte = async () => {
       perfil.value = data // Ahora sí es un objeto con propiedades
       
       if (data.is_dm === true || data.is_dm === 'true') {
-        console.log("¡Bienvenido, Dungeon Master!")
         await cargarCampañasDM(data.id)
       } else {
-        console.log("Bienvenido, Jugador.")
         await cargarPersonajesJugador(userEmail)
       }
     }
@@ -159,6 +157,7 @@ onBeforeUnmount(() => {
           </button>
           
           <span v-if="perfil" class="saludo">Saludos, <strong class="texto-dorado">{{ perfil.nombre }}</strong></span>
+          <NuxtLink class="enlace-versiones" to="/versiones">Versiones</NuxtLink>
           <button @click="cerrarSesion" class="btn-salir">Abandonar Taberna</button>
         </div>
       </nav>

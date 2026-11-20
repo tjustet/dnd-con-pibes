@@ -1,0 +1,45 @@
+<script setup>
+useHead({ title: 'Historial de versiones' })
+const usuario = useSupabaseUser()
+const versiones = [
+  {
+    numero: '0.1.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
+    titulo: 'Cuaderno del director',
+    cambios: [
+      'Leé y editá pergaminos desde la mesa del DM o en pantalla completa.',
+      'El título y el texto se guardan automáticamente. Podés asociar imágenes a palabras del pergamino.',
+      'La mesa y las fichas se adaptan a pantallas chicas.',
+      'El tablero carga solo los datos necesarios para mostrar tus campañas y personajes.'
+    ]
+  }
+]
+</script>
+
+<template>
+  <main class="historial">
+    <div class="columna">
+      <NuxtLink :to="usuario ? '/dashboard' : '/'">← Volver a la taberna</NuxtLink>
+      <h1>Historial de versiones</h1>
+      <article v-for="version in versiones" :key="version.numero">
+        <header><strong>v{{ version.numero }}</strong><time :datetime="version.fecha">{{ version.fechaVisible }}</time></header>
+        <h2>{{ version.titulo }}</h2>
+        <ul><li v-for="cambio in version.cambios" :key="cambio">{{ cambio }}</li></ul>
+      </article>
+    </div>
+  </main>
+</template>
+
+<style scoped>
+.historial { min-height: 100vh; background: #0a0a0c; color: #e4e4e7; padding: clamp(1.25rem, 5vw, 4rem); font: 1rem/1.6 Inter, sans-serif; }
+.columna { max-width: 46rem; margin-inline: auto; }
+.historial a { color: #93c5fd; text-decoration: underline; }
+h1, h2 { font-family: Cinzel, Georgia, serif; color: #fde68a; }
+h1 { margin: 2rem 0 1rem; font-size: clamp(1.85rem, 6vw, 3rem); }
+h2 { margin: .75rem 0; font-size: 1.5rem; }
+article { padding: clamp(1rem, 4vw, 2rem); border: 1px solid #334155; border-radius: .75rem; background: #111115; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
+strong { color: #facc15; }
+time { font-size: .88rem; color: #a1a1aa; }
+ul { padding-left: 1.2rem; list-style: disc; }
+li + li { margin-top: .45rem; }
+</style>
