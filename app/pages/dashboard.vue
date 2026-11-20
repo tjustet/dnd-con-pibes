@@ -1,8 +1,9 @@
 <script setup>
 const supabase = useSupabaseClient()
-// Mantenemos esta variable por si Nuxt la necesita internamente, pero no confiaremos en ella
-const user = useSupabaseUser() 
-
+const { avisar } = useAvisos()
+const errorCarga = ref('')
+const guardando = ref(false)
+const musicaLista = ref(false)
 const perfil = ref(null)
 const cargando = ref(true)
 
@@ -34,19 +35,23 @@ const toggleMusica = () => {
 
 // Pasamos el ID directamente como parámetro para no depender de user.value
 const cargarCampañasDM = async (dmId) => {
-  const { data } = await supabase.from('campaigns').select('*').eq('dm_id', dmId).order('created_at', { ascending: false })
+  const { data, error } = await supabase.from('campaigns').select('*').eq('dm_id', dmId).order('created_at', { ascending: false })
+  if (error) throw error
   if (data) misCampañas.value = data
 }
 
 const cargarPersonajesJugador = async (email) => {
-  const { data } = await supabase.from('characters').select('*, campaigns(nombre_campanya)').eq('player_email', email)
+  const { data, error } = await supabase.from('characters').select('*, campaigns(nombre_campanya)').eq('player_email', email)
+  if (error) throw error
   if (data) misPersonajes.value = data
 }
 
 const crearCampaña = async () => {
-  if (!nombreNuevaCampaña.value || !perfil.value) return
+  if (guardando.value || !nombreNuevaCampaña.value.trim() || !perfil.value) return
+  guardando.value = true
+  try {
   const { error } = await supabase.from('campaigns').insert([{ 
-    nombre_campanya: nombreNuevaCampaña.value, 
+    nombre_campanya: nombreNuevaCampaña.value.trim(), 
     imagen_url: imagenNuevaCampaña.value, // NUEVO: Guardar imagen
     dm_id: perfil.value.id 
   }])
@@ -56,18 +61,22 @@ const crearCampaña = async () => {
     nombreNuevaCampaña.value = ''
     imagenNuevaCampaña.value = '' // NUEVO: Limpiar input
     await cargarCampañasDM(perfil.value.id)
-  }
+  } else throw error
+  } catch (e) { avisar(e.message, true) }
+  finally { guardando.value = false }
 }
 
 // 🛡️ MÉTODO A PRUEBA DE BALAS PARA OBTENER LA SESIÓN
 const cargarPerfilFuerte = async () => {
+  cargando.value = true
+  errorCarga.value = ''
   try {
     // 1. Buscamos la sesión del navegador
     const { data: authData } = await supabase.auth.getSession()
     if (!authData?.session?.user) {
       console.warn("Sin sesión. Cerrando puerta.")
       cargando.value = false
-      return
+      return navigateTo('/')
     }
 
     const userEmail = authData.session.user.email
@@ -79,7 +88,7 @@ const cargarPerfilFuerte = async () => {
       .single() 
     
     if (error) {
-      console.error("Error al buscar el perfil:", error.message)
+      throw error
     }
 
     // 3. Asignamos y comprobamos
@@ -95,14 +104,15 @@ const cargarPerfilFuerte = async () => {
       }
     }
   } catch (error) {
-    console.error("Error crítico:", error)
+    errorCarga.value = "No se pudo cargar tu perfil o tus campañas. Verificá la conexión y reintentá."
   } finally {
     cargando.value = false
   }
 }
 
 const cerrarSesion = async () => {
-  await supabase.auth.signOut()
+  const { error } = await supabase.auth.signOut()
+  if (error) return avisar(error.message, true)
   navigateTo('/')
 }
 
@@ -110,40 +120,27 @@ onMounted(() => {
   // Disparamos la carga fuerte apenas el componente se monta en el navegador
   cargarPerfilFuerte()
 
-  // Inyectamos YouTube
-  const tag = document.createElement('script')
-  tag.src = "https://www.youtube.com/iframe_api"
-  const firstScriptTag = document.getElementsByTagName('script')[0]
-  firstScriptTag.parentNode.insertBefore(tag, firstScriptTag)
-
-  window.onYouTubeIframeAPIReady = () => {
-    player = new window.YT.Player('yt-player', {
-      height: '0', width: '0', videoId: 'vyg5jJrZ42s',
-      playerVars: { 
-        autoplay: 1, 
-        loop: 1, 
-        playlist: 'vyg5jJrZ42s', 
-        controls: 0, 
-        origin: window.location.origin,
-        mute: 1
-      },
-      events: { 
-        onReady: (event) => {
-          event.target.setVolume(20)
-          event.target.unMute()
-          event.target.playVideo()
-        } 
-      } 
-    })
-  }
-
-  document.addEventListener('click', () => {
-    if (player && !musicaSonando.value) {
-      player.unMute()
-      player.playVideo()
-      musicaSonando.value = true
+  if (window.YT?.Player) iniciarMusica()
+  else {
+    window.onYouTubeIframeAPIReady = iniciarMusica
+    if (!document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
+      const script = document.createElement('script')
+      script.src = 'https://www.youtube.com/iframe_api'
+      document.head.appendChild(script)
     }
-  }, { once: true }) // Solo funciona la primera vez que tocan algo
+  }
+})
+function iniciarMusica() {
+  if (!document.getElementById('yt-player') || player) return
+  player = new window.YT.Player('yt-player', {
+    height: '0', width: '0', videoId: 'vyg5jJrZ42s',
+    playerVars: { loop: 1, playlist: 'vyg5jJrZ42s', controls: 0, origin: location.origin },
+    events: { onReady: e => { e.target.setVolume(20); musicaLista.value = true } }
+  })
+}
+onBeforeUnmount(() => {
+  if (window.onYouTubeIframeAPIReady === iniciarMusica) delete window.onYouTubeIframeAPIReady
+  player?.destroy?.()
 })
 </script>
 
@@ -157,7 +154,7 @@ onMounted(() => {
       <nav class="navbar panel-glass">
         <h1 class="titulo-epico">D&D Manager</h1>
         <div class="usuario-menu">
-          <button @click="toggleMusica" class="btn-musica" :title="musicaSonando ? 'Silenciar Taberna' : 'Escuchar Taberna'">
+          <button :disabled="!musicaLista" aria-label="Música de la taberna" :aria-pressed="musicaSonando" @click="toggleMusica" class="btn-musica" :title="musicaSonando ? 'Silenciar Taberna' : 'Escuchar Taberna'">
             {{ musicaSonando ? '🔊' : '🔇' }}
           </button>
           
@@ -170,7 +167,8 @@ onMounted(() => {
         
         <div v-if="cargando" class="cargando">Consultando los pergaminos de la creación...</div>
 
-        <div v-else-if="perfil?.is_dm" class="panel-principal panel-glass dm-borde">
+        <div v-else-if="errorCarga" class="estado-partida" role="alert">{{ errorCarga }} <button @click="cargarPerfilFuerte">Reintentar</button></div>
+        <div v-else-if="perfil?.is_dm === true || perfil?.is_dm === 'true'" class="panel-principal panel-glass dm-borde">
           <div class="header-panel">
             <h2 class="subtitulo-seccion dm-color">Mis Campañas (Dungeon Master)</h2>
             <button @click="creandoCampaña = true" class="btn-accion-dm">+ Forjar Nueva Campaña</button>
@@ -206,7 +204,7 @@ onMounted(() => {
 
               <div class="acciones">
                 <button @click="creandoCampaña = false" class="btn-cancelar">Cancelar</button>
-                <button @click="crearCampaña" class="btn-accion-dm">Crear Mundo</button>
+                <button :disabled="guardando || !nombreNuevaCampaña.trim()" @click="crearCampaña" class="btn-accion-dm">Crear Mundo</button>
               </div>
             </div>
           </div>
@@ -231,7 +229,7 @@ onMounted(() => {
             </div>
           </div>
           <div v-else class="vacio">
-            No tienes personajes. El DM debe asignarte uno usando tu correo: <span class="texto-dorado">{{ user?.email }}</span>
+            No tienes personajes. El DM debe asignarte uno usando tu correo: <span class="texto-dorado">{{ perfil?.email }}</span>
           </div>
         </div>
         
@@ -247,7 +245,7 @@ onMounted(() => {
 .pantalla-taberna { 
   min-height: 100vh; 
   /* Imagen de alta calidad de una taberna clásica de madera */
-  background-image: url('fondoTaberna.png'); 
+  background-image: url('/fondo-taberna.webp'); 
   background-size: cover; 
   background-position: center; 
   background-attachment: fixed;
@@ -331,4 +329,21 @@ onMounted(() => {
 .acciones { display: flex; justify-content: flex-end; gap: 1rem; }
 .btn-cancelar { background: transparent; color: #94a3b8; border: none; cursor: pointer; padding: 0.5rem 1rem; font-weight: bold; }
 .btn-cancelar:hover { color: white; }
+
+.grilla { grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); }
+.navbar, .usuario-menu, .header-panel, .acciones { flex-wrap: wrap; gap: 12px; }
+.modal-card { max-height: 90dvh; overflow-y: auto; }
+@media (max-width: 700px) {
+  .pantalla-taberna { background-attachment: scroll; }
+  .contenedor-principal { width: 100%; padding: 12px; }
+  .navbar, .panel-principal, .modal-card { padding: 16px; }
+  .navbar { margin-bottom: 16px; }
+  .titulo-epico { font-size: 1.8rem; }
+  .usuario-menu { width: 100%; gap: 8px; }
+  .saludo { flex: 1; font-size: .9rem; }
+  .header-panel { align-items: start; }
+  .subtitulo-seccion { font-size: 1.25rem; }
+  .modal-overlay { padding: 12px; }
+  .grilla { gap: 12px; }
+}
 </style>

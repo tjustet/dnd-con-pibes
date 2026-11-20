@@ -59,7 +59,7 @@ const emit = defineEmits([
           <div class="tapete-caida">
             <div v-for="(d, idx) in dmDadosEnMesa" :key="idx" class="dado-dm-3d" :class="{'dado-girando': dmTirando, ['dado-d'+d.caras]: true}">{{ d.valor }}</div>
           </div>
-          <div v-if="!dmTirando && dmResultadoFinal > 0" class="resultado-gigante-dm">{{ dmResultadoFinal }}</div>
+          <div v-if="!dmTirando && dmDadosEnMesa.length > 0" class="resultado-gigante-dm">{{ dmResultadoFinal }}</div>
         </div>
         <div class="controles-mesa">
           <div class="fila-botones-dados">
@@ -79,7 +79,7 @@ const emit = defineEmits([
             <div class="inputs-mesa-final">
               <input type="number" v-model="dmBono" placeholder="Bono" class="input-bono-dm" />
               <button class="btn-clear-dm" @click="emit('limpiar-pool')">✖</button>
-              <button class="btn-roll-dm" @click="emit('tirar-pool', null)">ROLL</button>
+              <button :disabled="dmTirando || !dmPool.length" class="btn-roll-dm" @click="emit('tirar-pool', null)">Tirar</button>
             </div>
           </div>
         </div>

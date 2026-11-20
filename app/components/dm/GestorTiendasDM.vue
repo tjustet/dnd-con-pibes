@@ -10,6 +10,11 @@ const emit = defineEmits(['cerrar', 'proyectarVision', 'proyectarTienda'])
 const supabase = useSupabaseClient()
 
 // --- ESTADOS DE NAVEGACIÓN ---
+const { avisar } = useAvisos()
+const vendiendo = ref(false)
+let operacion = ''
+let contenidoOperacion = ''
+let consultaTienda = 0
 const ciudades = ref([])
 const ciudadSeleccionadaId = ref('')
 const tiendasUrbana = ref([])
@@ -20,7 +25,6 @@ const personalCargado = ref([])
 const inventarioCargado = ref([]) // IDs resueltos contra la BD real
 
 // --- MECÁNICAS DE DADOS Y JUGADORES EN TIENDA ---
-const pjsAdentro = ref([]) // Array de IDs de personajes que entraron
 const dadoSimuladoForm = ref(10) // Valor d20 para simular visibilidad rápida
 const mostrarSoloSugeridos = ref(false)
 
@@ -46,16 +50,20 @@ const inicializarComercio = async () => {
 }
 
 const actualizarCalles = async () => {
-  if (!ciudadSeleccionadaId.value) return
+  const ciudad = ciudadSeleccionadaId.value
+  consultaTienda++
   tiendaFoco.value = null
-  const { data } = await supabase.from('tiendas_sesion').select('*').eq('ciudad_id', ciudadSeleccionadaId.value).order('tipo')
-  if (data) tiendasUrbana.value = data
+  tiendasUrbana.value = []
+  if (!ciudad) return
+  const { data } = await supabase.from('tiendas_sesion').select('*').eq('ciudad_id', ciudadSeleccionadaId.value).eq('campaign_id', props.campaignId).order('tipo')
+  if (data && ciudad === ciudadSeleccionadaId.value) tiendasUrbana.value = data
 }
 
 // --- INSPECCIONAR ESTABLECIMIENTO ---
 const inspeccionarComercio = async (tienda) => {
+  if (vendiendo.value && tiendaFoco.value?.id !== tienda.id) return
+  const consulta = ++consultaTienda
   tiendaFoco.value = tienda
-  pjsAdentro.value = []
   mesaTratos.value = []
   personalCargado.value = []
   inventarioCargado.value = []
@@ -63,6 +71,7 @@ const inspeccionarComercio = async (tienda) => {
   // 1. Cargar Empleados vinculados
   if (tienda.empleados && tienda.empleados.length > 0) {
     const { data } = await supabase.from('characters').select('*').in('id', tienda.empleados)
+    if (consulta !== consultaTienda) return
     if (data) personalCargado.value = data
   }
 
@@ -83,6 +92,7 @@ const inspeccionarComercio = async (tienda) => {
     }
 
     // Unimos los datos maestros de la BD con el stock transaccional de esta tienda
+    if (consulta !== consultaTienda) return
     inventarioCargado.value = refsGuardadas.map(rg => {
       let datosMaestros = rg.tabla === 'items_base'
         ? catBase.find(b => b.id === rg.item_id)
@@ -119,7 +129,7 @@ const empujarAlCarrito = (item) => {
   if (item.stock_local <= 0) return alert("No queda stock disponible en estanterías.")
   
   // Si ya está, sumamos cantidad
-  const existente = mesaTratos.value.find(t => t.item_id === item.id)
+  const existente = mesaTratos.value.find(t => t.item_id === item.id && t.ref_item_sistema.tabla_origen === item.tabla_origen)
   if (existente) {
     if (existente.unidades < item.stock_local) existente.unidades++
     return
@@ -141,95 +151,55 @@ const removerDelCarrito = (idx) => {
 
 // --- CIERRE DE TRATO: PROCESAMIENTO MATEMÁTICO D&D 5E ---
 const venderYTransferir = async () => {
-  if (mesaTratos.value.length === 0) return alert("La mesa de negociación está vacía.")
-
-  for (const trato of mesaTratos) {
-    if (!trato.comprador_id) return alert(`Asigna un héroe comprador para el artículo: ${trato.nombre}`)
-    
-    const pj = props.jugadores.find(j => j.id === trato.comprador_id)
-    if (!pj) continue
-
-    const costeTotalCobre = trato.precio_unidad_cobre * trato.unidades
-
-    // Desglosar la cartera del PJ usando el mismo estándar de tu dm.vue
-    const m = pj.monedas || { ppt: 0, po: 0, plata: 0, pc: 0 }
-    let balancePjCobre = (m.ppt * 10000) + (m.po * 1000) + (m.plata * 100) + m.pc
-
-    if (balancePjCobre < costeTotalCobre) {
-      return alert(`¡Fondos Insuficientes! ${pj.nombre_pj} necesita ${costeTotalCobre} pc pero solo carga ${balancePjCobre} pc.`)
-    }
-
-    // 1. Cobrar Dinero
-    balancePjCobre -= costeTotalCobre
-    let resto = balancePjCobre
-    const nPpt = Math.floor(resto / 10000); resto %= 10000
-    const nPo = Math.floor(resto / 1000); resto %= 1000
-    const nPlata = Math.floor(resto / 100); resto %= 100
-
-    // 2. Modificar el inventario del Jugador
-    const nuevoInventarioPJ = [...(pj.inventario || [])]
-    nuevoInventarioPJ.push({
-      id: Date.now() + Math.random(),
-      nombre: `${trato.nombre} (Comprado en ${tiendaFoco.value.nombre_personalizado || tiendaFoco.value.tipo})`,
-      cantidad: trato.unidades,
-      tipo: 'Equipamiento',
-      peso: trato.ref_item_sistema.peso || 0,
-      bono: trato.ref_item_sistema.bono || ''
-    })
-
-    // 3. Modificar el stock de la tienda
-    trato.ref_item_sistema.stock_local -= trato.unidades
-    
-    // Mapeamos el inventario_actual de la tienda con los nuevos valores reducidos de stock
-    const nuevoInventarioTiendaLimpio = tiendaFoco.value.inventario_actual.map(refOriginal => {
-      if (refOriginal.item_id === trato.item_id) {
-        return { ...refOriginal, cantidad: trato.ref_item_sistema.stock_local }
-      }
-      return refOriginal
-    }).filter(refOriginal => refOriginal.cantidad > 0) // Limpiamos si quedó en 0
-
-    // 4. Commits atómicos directos a Supabase
-    await supabase.from('characters').update({
-      monedas: { ppt: nPpt, po: nPo, plata: nPlata, pc: resto },
-      inventario: nuevoInventarioPJ
-    }).eq('id', pj.id)
-
-    await supabase.from('tiendas_sesion').update({
-      inventario_actual: nuevoInventarioTiendaLimpio
-    }).eq('id', tiendaFoco.value.id)
-
-    // Actualizamos la memoria del componente en caliente
-    tiendaFoco.value.inventario_actual = nuevoInventarioTiendaLimpio
-    pj.monedas = { ppt: nPpt, po: nPo, plata: nPlata, pc: resto }
-    pj.inventario = nuevoInventarioPJ
-  }
-
-  alert("Trato cerrado. Monedas cobradas e inventarios actualizados.")
-  mesaTratos.value = []
-  if (tiendaFoco.value) inspeccionarComercio(tiendaFoco.value)
+  if (vendiendo.value || !mesaTratos.value.length) return
+  const lineas = mesaTratos.value.map(t => ({
+    item_id: t.item_id, tabla: t.ref_item_sistema.tabla_origen, comprador: t.comprador_id,
+    precio: t.precio_unidad_cobre, unidades: t.unidades
+  }))
+  if (lineas.some(t => !t.comprador || !Number.isSafeInteger(t.precio) || t.precio < 0 ||
+    !Number.isSafeInteger(t.unidades) || t.unidades < 1)) return avisar('Revisá el comprador, la cantidad y el precio.', true)
+  vendiendo.value = true
+  const tienda = tiendaFoco.value
+  const contenido = JSON.stringify([tienda.id, lineas])
+  if (!operacion || contenido !== contenidoOperacion) operacion = idOperacion()
+  contenidoOperacion = contenido
+  try {
+    const { error } = await supabase.rpc('dnd_vender', { p_campana: props.campaignId, p_tienda: String(tienda.id),
+      p_lineas: lineas, p_operacion: operacion })
+    if (error) throw error
+    operacion = ''
+    mesaTratos.value = []
+    avisar('Trato cerrado. El inventario y el saldo ya están actualizados.')
+    const { data, error: errorStock } = await supabase.from('tiendas_sesion').select('*').eq('id', tienda.id).single()
+    if (errorStock) throw errorStock
+    Object.assign(tienda, data)
+    await inspeccionarComercio(tienda)
+  } catch (e) { avisar(e.message, true) }
+  finally { vendiendo.value = false }
 }
 
 const proyectarAlTableroGeneral = () => {
   if (!tiendaFoco.value) return
   emit('proyectarTienda', {
+    id: tiendaFoco.value.id,
     nombreLugar: tiendaFoco.value.nombre_personalizado || tiendaFoco.value.tipo,
     inventario: inventarioCargado.value.filter(i => i.revelado)
   })
-  alert("Catálogo visible proyectado en la mesa de juego.")
+  avisar('Catálogo proyectado en la mesa.')
 }
 
 onMounted(() => { inicializarComercio() })
 </script>
 
 <template>
-  <div class="modal-tienda-dm-overlay" @click.self="emit('cerrar')">
-    <div class="hoja-registro-dm">
+  <div class="modal-tienda-dm-overlay" @click.self="!vendiendo && emit('cerrar')">
+    <div class="hoja-registro-dm" :inert="vendiendo" :aria-busy="vendiendo">
       
       <div class="control-ciudades-bar flex-between">
         <div class="flex-align">
           <span class="t-dorado font-cinzel text-lg mr-1">🏰 Asentamiento:</span>
           <select v-model="ciudadSeleccionadaId" @change="actualizarCalles" class="select-dm-comercio">
-            <option v-for="c in ciudades" :key="c.id" :value="c.id">{{ c.nombre }} ({{ c.tamano.toUpperCase() }})</option>
+            <option v-for="c in ciudades" :key="c.id" :value="c.id">{{ c.nombre }} ({{ (c.tamano || 'pueblo').toUpperCase() }})</option>
           </select>
         </div>
         <div class="buscador-caja-tienda">
@@ -315,7 +285,7 @@ onMounted(() => { inicializarComercio() })
                   
                   <div 
                     v-for="item in inventarioCargado" 
-                    :key="item.id" 
+                    :key="item.tabla_origen + item.id" 
                     v-show="!mostrarSoloSugeridos || item.revelado"
                     :class="['fila-articulo-dm-tienda', item.revelado ? 'revelado' : 'oculto']"
                   >
@@ -348,7 +318,7 @@ onMounted(() => { inicializarComercio() })
           </div>
 
           <div class="scroll-facturacion" v-else>
-            <div v-for="(trato, idx) in mesaTratos" :key="trato.item_id" class="tarjeta-factura-item mb-1">
+            <div v-for="(trato, idx) in mesaTratos" :key="trato.ref_item_sistema.tabla_origen + trato.item_id" class="tarjeta-factura-item mb-1">
               <div class="flex-between mb-corto">
                 <span class="text-white font-bold text-sm text-ellipsis" style="width: 80%">{{ trato.nombre }}</span>
                 <button class="btn-quitar-factura" @click="removerDelCarrito(idx)">✖</button>
@@ -377,7 +347,7 @@ onMounted(() => { inicializarComercio() })
             </div>
           </div>
 
-          <button v-if="mesaTratos.length > 0" @click="venderYTransferir" class="btn-cerrar-trato-dorado">
+          <button v-if="mesaTratos.length > 0" @click="venderYTransferir" :disabled="vendiendo" class="btn-cerrar-trato-dorado">
             🤝 Cerrar Trato y Cobrar Fondos
           </button>
         </div>
@@ -412,7 +382,7 @@ onMounted(() => { inicializarComercio() })
 .titulo-seccion-comercio { font-family: 'Cinzel', serif; color: #facc15; font-size: 1rem; margin: 0; padding: 12px; background: rgba(0,0,0,0.2); border-bottom: 1px solid #1e293b; }
 
 /* TARJETAS TIENDA */
-.scroll-tiendas-comercio { pading: 10px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; padding: 10px; }
+.scroll-tiendas-comercio { display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; padding: 10px; }
 .tarjeta-tienda-dm-mesa { display: flex; align-items: center; gap: 12px; background: #121216; border: 1px solid #232329; padding: 10px; border-radius: 8px; cursor: pointer; transition: 0.2s; }
 .tarjeta-tienda-dm-mesa:hover { border-color: #3b82f6; background: #16161c; }
 .tarjeta-tienda-dm-mesa.activo { border-color: #b45309; background: rgba(180, 83, 9, 0.1); box-shadow: inset 0 0 10px rgba(180,83,9,0.2); }
@@ -489,4 +459,24 @@ onMounted(() => { inicializarComercio() })
 .gap-1 { gap: 10px; }
 .flex-center { display: flex; justify-content: center; align-items: center; }
 .aviso-sin-personal, .aviso-vacio { text-align: center; font-size: 0.8rem; color: #52525b; padding: 15px 5px; }
+
+.cuerpo-interactivo-comercial > *, .sub-grid-tienda-interna > * { min-width: 0; min-height: 0; }
+@media (max-width: 1150px) {
+  .hoja-registro-dm { width: 100%; height: 94dvh; max-width: 100%; }
+  .cuerpo-interactivo-comercial { display: block; min-height: 0; overflow-y: auto; }
+  .sub-grid-tienda-interna { grid-template-columns: minmax(185px,1fr) minmax(0,2fr); }
+  .lista-tiendas-calles, .caja-facturacion-negociacion { border: 0; }
+  .scroll-tiendas-comercio { max-height: 220px; }
+  .interior-tienda-dm, .layout-interior-tienda { height: auto; overflow: visible; }
+  .control-ciudades-bar, .header-comercio-activo, .fila-articulo-dm-tienda { flex-wrap: wrap; gap: 8px; }
+}
+@media (max-width: 630px) {
+  .modal-tienda-dm-overlay { padding: 0; }
+  .hoja-registro-dm { height: 100dvh; border-radius: 0; border-width: 0; }
+  .control-ciudades-bar { padding: 8px 12px; }
+  .control-ciudades-bar > * { max-width: 100%; min-width: 0; }
+  .sub-grid-tienda-interna { display: block; }
+  .entorno-comercial-dados { border: 0; padding: 0 0 12px; }
+  .btn-agregar-negociacion { width: 36px; height: 36px; }
+}
 </style>

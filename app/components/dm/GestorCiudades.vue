@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import ModalGeneradorNpc from '../ModalGeneradorNpc.vue'
 
+const { avisar } = useAvisos()
 const supabase = useSupabaseClient()
 const route = useRoute()
 const router = useRouter()
@@ -107,18 +108,23 @@ const crearCiudad = async () => {
     empleados: []
   }))
 
-  if(tAInsertar.length > 0) await supabase.from('tiendas_sesion').insert(tAInsertar)
+  if (tAInsertar.length) {
+    const { error: errorTiendas } = await supabase.from('tiendas_sesion').insert(tAInsertar)
+    if (errorTiendas) { avisar('La ciudad se creó, pero los locales no se pudieron crear.', true); vista.value = 'lista'; return cargarCiudades() }
+  }
   vista.value = 'lista'; cargarCiudades()
 }
 
 const guardarCambiosCiudad = async () => {
-  await supabase.from('ciudades').update({ nombre: ciudadActiva.value.nombre, descripcion: ciudadActiva.value.descripcion }).eq('id', ciudadActiva.value.id)
-  alert("Asentamiento guardado.")
+  const { error } = await supabase.from('ciudades').update({ nombre: ciudadActiva.value.nombre, descripcion: ciudadActiva.value.descripcion }).eq('id', ciudadActiva.value.id)
+  if (error) return avisar(error.message, true)
+  avisar('Asentamiento guardado.')
 }
 
 const borrarCiudad = async (id) => {
   if(confirm("¿Estás seguro de borrar este asentamiento entero con sus comercios?")) {
-    await supabase.from('ciudades').delete().eq('id', id)
+    const { error } = await supabase.from('ciudades').delete().eq('id', id)
+    if (error) return avisar(error.message, true)
     vista.value = 'lista'; cargarCiudades()
   }
 }
@@ -126,7 +132,7 @@ const borrarCiudad = async (id) => {
 const abrirCiudad = async (ciudad) => {
   ciudadActiva.value = ciudad
   busquedaTienda.value = ''
-  const { data } = await supabase.from('tiendas_sesion').select('*').eq('ciudad_id', ciudad.id).order('tipo')
+  const { data } = await supabase.from('tiendas_sesion').select('*').eq('ciudad_id', ciudad.id).eq('campaign_id', route.params.id).order('tipo')
   if (data) tiendasDeCiudadActual.value = data
   vista.value = 'ciudad-detalle'
 }
@@ -173,14 +179,14 @@ const mostrandoSelectorExistente = ref(false)
 
 const cargarTodosLosNpcs = async () => {
   if (!route.params.id) return
-  const { data } = await supabase.from('characters').select('id, nombre_pj, clase, nivel').eq('campaign_id', route.params.id)
+  const { data } = await supabase.from('characters').select('id, nombre_pj, clase, nivel').eq('campaign_id', route.params.id).eq('tipo', 'npc')
   if (data) npcsDeCampaña.value = data
 }
 
 // --- ABRIR TIENDA Y RESOLVER IDs DE INVENTARIO ---
 const abrirTienda = async (tienda) => {
   tiendaActiva.value = tienda
-  if(!tiendaActiva.value.inventario_actual) tiendaActiva.value.inventario_actual = []
+
   if(!tiendaActiva.value.empleados) tiendaActiva.value.empleados = []
   mostrandoSelectorExistente.value = false
 
@@ -196,7 +202,7 @@ const abrirTienda = async (tienda) => {
 
   // RESOLVER INVENTARIO (IDs -> Objetos reales)
   inventarioMostrado.value = []
-  const itemsGuardados = tiendaActiva.value.inventario_actual
+  const itemsGuardados = tiendaActiva.value.inventario_actual || []
   
   if (itemsGuardados.length > 0) {
     const idsBase = itemsGuardados.filter(i => i.tabla === 'items_base').map(i => i.item_id)
@@ -237,7 +243,8 @@ const guardarCambiosTienda = async () => {
 
 const borrarTienda = async () => {
   if(confirm("¿Demoler este establecimiento por completo?")) {
-    await supabase.from('tiendas_sesion').delete().eq('id', tiendaActiva.value.id)
+    const { error } = await supabase.from('tiendas_sesion').delete().eq('id', tiendaActiva.value.id).select('id').single()
+    if (error) return avisar(error.message, true)
     abrirCiudad(ciudadActiva.value)
   }
 }
@@ -286,8 +293,18 @@ const syncInventarioBD = async () => {
     cantidad: item.cantidad_en_tienda,
     tabla: item.ref_tabla
   }))
-  tiendaActiva.value.inventario_actual = arrayLimpio
-  await supabase.from('tiendas_sesion').update({ inventario_actual: arrayLimpio }).eq('id', tiendaActiva.value.id)
+  const tienda = tiendaActiva.value
+  const anterior = tienda.inventario_actual
+  const q = supabase.from('tiendas_sesion').update({ inventario_actual: arrayLimpio }).eq('id', tienda.id)
+  const { data, error } = await (anterior == null ? q.is('inventario_actual', null) : q.eq('inventario_actual', JSON.stringify(anterior))).select('id').maybeSingle()
+  if (!data || error) {
+    avisar('El stock cambió o no se pudo guardar. Se recargará la tienda.', true)
+    const { data: actual } = await supabase.from('tiendas_sesion').select('*').eq('id', tienda.id).single()
+    if (actual && tiendaActiva.value.id === tienda.id) await abrirTienda(actual)
+    return false
+  }
+  tienda.inventario_actual = arrayLimpio
+  return true
 }
 
 // --- STOCK AUTOMÁTICO RESTRINGIDO (Solo rellena lo que ya está) ---
@@ -309,12 +326,14 @@ const generarStockAutomatico = async () => {
     }
   })
 
-  await syncInventarioBD()
+  if (!await syncInventarioBD()) return
   alert("Vidrieras reabastecidas con éxito basadas en el nivel de los empleados.")
 }
 
 // --- FORJAR ITEM NUEVO (Guarda en BD general, luego vincula) ---
 const agregarObjetoALocal = async () => {
+  if (!Number.isSafeInteger(Number(nuevoItemForm.value.cantidad)) || Number(nuevoItemForm.value.cantidad) < 1 ||
+    !Number.isSafeInteger(Number(nuevoItemForm.value.precio_cobre)) || Number(nuevoItemForm.value.precio_cobre) < 0) return avisar('Revisá la cantidad y el precio.', true)
   if(!nuevoItemForm.value.nombre) return alert("Escribe el nombre del objeto a forjar.")
   
   const objInsertar = {
@@ -350,13 +369,13 @@ const decrementarItem = async (item) => {
   if (item.cantidad_en_tienda > 1) {
     item.cantidad_en_tienda--
   } else {
-    inventarioMostrado.value = inventarioMostrado.value.filter(i => i.id !== item.id)
+    inventarioMostrado.value = inventarioMostrado.value.filter(i => i !== item)
   }
   await syncInventarioBD()
 }
 
-const eliminarObjetoDeLocal = async (itemId) => {
-  inventarioMostrado.value = inventarioMostrado.value.filter(i => i.id !== itemId)
+const eliminarObjetoDeLocal = async (item) => {
+  inventarioMostrado.value = inventarioMostrado.value.filter(i => i !== item)
   await syncInventarioBD()
 }
 
@@ -385,7 +404,7 @@ onMounted(() => { cargarCiudades() })
         <div class="icono-ciudad">🏰</div>
         <div class="info-ciudad">
           <h3>{{ c.nombre }}</h3>
-          <span class="tamano-etiqueta">{{ c.tamano.toUpperCase() }}</span>
+          <span class="tamano-etiqueta">{{ (c.tamano || 'pueblo').toUpperCase() }}</span>
         </div>
       </div>
     </div>
@@ -545,19 +564,19 @@ onMounted(() => { cargarCiudades() })
 
             <div class="caja-forja">
               <div class="tabla-grid">
-                <input type="text" v-model="nuevoItemForm.nombre" placeholder="Filtra o nombra ítem..." class="input-dm search-pulse" />
-                <input type="number" v-model="nuevoItemForm.cantidad" class="input-dm txt-centro" />
+                <label><span class="etiqueta-catalogo">Nombre</span><input type="text" v-model="nuevoItemForm.nombre" placeholder="Filtra o nombra ítem..." class="input-dm search-pulse" /></label>
+                <label><span class="etiqueta-catalogo">Cantidad</span><input type="number" v-model="nuevoItemForm.cantidad" class="input-dm txt-centro" /></label>
                 
                 <div class="relative w-full">
-                  <input type="number" v-model="nuevoItemForm.precio_cobre" class="input-dm txt-centro w-full" />
+                  <label><span class="etiqueta-catalogo">Precio en cobre</span><input type="number" v-model="nuevoItemForm.precio_cobre" class="input-dm txt-centro w-full" /></label>
                 </div>
   
-                <input type="text" v-model="nuevoItemForm.bono" placeholder="Opcional" class="input-dm" />
+                <label><span class="etiqueta-catalogo">Bono</span><input type="text" v-model="nuevoItemForm.bono" placeholder="Opcional" class="input-dm" /></label>
                 
                 <div class="relative">
-                  <select v-model.number="nuevoItemForm.nivel_objeto" @mouseenter="sugPrecioVisible = true" @mouseleave="sugPrecioVisible = false" class="input-dm select-nvl w-full">
+                  <label><span class="etiqueta-catalogo">Nivel</span><select v-model.number="nuevoItemForm.nivel_objeto" @mouseenter="sugPrecioVisible = true" @mouseleave="sugPrecioVisible = false" class="input-dm select-nvl w-full">
                     <option v-for="n in 11" :key="n-1" :value="n-1">Nvl {{ n-1 }}</option>
-                  </select>
+                  </select></label>
                   <div class="tooltip-burbuja" v-if="sugPrecioVisible">💡 Sugerido: {{ sugerenciaPrecio }}</div>
                 </div>
               </div>
@@ -570,7 +589,7 @@ onMounted(() => { cargarCiudades() })
                 <span>Vidrieras vacías para esta búsqueda. Usa el botón forjar.</span>
               </div>
               
-              <div v-for="item in inventarioFiltrado" :key="item.id" class="tabla-grid-resultados tabla-row">
+              <div v-for="item in inventarioFiltrado" :key="item.ref_tabla + item.id" class="tabla-grid-resultados tabla-row">
                 <div class="col-left nombre-item-lista">
                   <strong>{{ item.nombre }}</strong>
                   <span class="txt-chico txt-gris d-block ml-1" v-if="item.ref_tabla === 'items_base'">(Catálogo Maestro)</span>
@@ -587,7 +606,7 @@ onMounted(() => { cargarCiudades() })
                 <div class="col-left txt-gris">{{ item.bono || '-' }}</div>
                 <div class="col-center badge-item-level">Nvl {{ item.nivel_objeto !== undefined ? item.nivel_objeto : (item.nivel || 0) }}</div>
                 <div class="col-center">
-                  <button @click="eliminarObjetoDeLocal(item.id)" class="btn-borrar-item-tabla">✖</button>
+                  <button @click="eliminarObjetoDeLocal(item)" class="btn-borrar-item-tabla">✖</button>
                 </div>
               </div>
             </div>
@@ -599,6 +618,7 @@ onMounted(() => { cargarCiudades() })
 
     <ModalGeneradorNpc 
       v-if="mostrandoModalNPC" 
+      :campaign-id="route.params.id"
       :tiendaFijaId="tiendaActiva?.id" 
       :tiendaTipo="tiendaActiva?.tipo" 
       :npcEditando="npcEditando"
@@ -719,4 +739,25 @@ onMounted(() => { cargarCiudades() })
 .btn-toggle.activo { background: #3b82f6; color: white; }
 .btn-cancelar { background: transparent; border: 1px solid #475569; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
 .text-center { text-align: center; }
+
+.panel-inventario, .panel-npc, .inputs-tienda-crud > *, .tabla-grid > * { min-width: 0; }
+@media (max-width: 1100px) {
+  .paneles-tienda { grid-template-columns: minmax(0,1fr); }
+}
+@media (max-width: 760px) {
+  .gestor-wrapper { padding: 12px; }
+  .grilla-ciudades, .grilla-tiendas, .form-basico { grid-template-columns: minmax(0,1fr); }
+  .header-gestor, .acciones-header, .inputs-inline, .header-seccion-inventario, .botones-tienda-fns { flex-wrap: wrap; gap: 8px; }
+  .tabla-inventario-container .tabla-header { display: none; }
+  .caja-forja .tabla-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .tabla-grid label { display: block; color: #94a3b8; font-size: .8rem; }
+  .tabla-grid-resultados { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .tabla-row { padding: 12px; align-items: center; }
+  .tabla-row .nombre-item-lista { grid-column: 1/-1; }
+  .tabla-row .btn-cant { width: 32px; height: 32px; }
+  .tabla-inventario-scroll { max-height: 60dvh; }
+  .inputs-tienda-crud .input-group { flex: 1 1 100%; }
+}
+.etiqueta-catalogo { display: none; }
+@media (max-width: 760px) { .etiqueta-catalogo { display: block; } }
 </style>

@@ -1,16 +1,16 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute } from 'vue-router'
 
 const props = defineProps({
-  tiendaFijaId: { type: String, default: null },
+  campaignId: { type: String, required: true },
+  tiendaFijaId: { type: [String, Number], default: null },
   tiendaTipo: { type: String, default: '' },
   npcEditando: { type: Object, default: null }
 })
 
 const emit = defineEmits(['cerrar', 'guardar-npc'])
 const supabase = useSupabaseClient()
-const route = useRoute()
+
 
 const modoRapido = ref(true)
 const excepcionLimiteNivel = ref(false)
@@ -336,7 +336,7 @@ const prepararOpcionesTrabajo = () => {
 
 const cargarTiendas = async () => {
   if (props.tiendaFijaId) return 
-  const { data } = await supabase.from('tiendas_sesion').select('id, nombre_personalizado, tipo')
+  const { data } = await supabase.from('tiendas_sesion').select('id, nombre_personalizado, tipo').eq('campaign_id', props.campaignId)
   if (data) tiendasDisponibles.value = data
 }
 
@@ -381,48 +381,61 @@ watch(statsGeneradas, (nuevos) => {
 
 const calcularMod = (val) => { const m = Math.floor((val - 10) / 2); return m >= 0 ? `+${m}` : m }
 
+const guardandoNpc = ref(false)
+const { avisar } = useAvisos()
 const procesarYGuardar = async () => {
+  if (guardandoNpc.value) return
   if (!form.value.nombre) return alert("El NPC necesita un nombre.")
   
   // SOLUCIÓN: Validamos que la ID de la ruta no sea la palabra "nuevo" antes de mandarla a Supabase
-  const idCampanaValido = (route.params.id && route.params.id !== 'nuevo') ? route.params.id : null
+  const idCampanaValido = props.campaignId
 
-  const npcFinal = {
-    tipo: 'npc',
-    campaign_id: idCampanaValido,
-    nombre_pj: form.value.nombre,
-    raza: form.value.raza,
-    clase: form.value.trabajo,
-    nivel: form.value.nivel,
-    alineamiento: form.value.alineamiento,
-    imagen_url: form.value.imagen_url || null,
-    fuerza: form.value.fuerza,
-    destreza: form.value.destreza,
-    constitucion: form.value.constitucion,
-    inteligencia: form.value.inteligencia,
-    sabiduria: form.value.sabiduria,
-    carisma: form.value.carisma,
-    hp_max: form.value.hp_max,
-    hp_actual: form.value.hp_max, 
-    clase_armadura: form.value.clase_armadura,
-    velocidad: parseInt(form.value.velocidad) || 30,
-    notas: form.value.notas,
-    inventario: props.npcEditando ? props.npcEditando.inventario : []
-  }
-
-  if (props.npcEditando) {
-    const { data, error } = await supabase.from('characters').update(npcFinal).eq('id', props.npcEditando.id).select().single()
-    if (error) return alert("Error al editar: " + error.message)
-    emit('guardar-npc', data)
-  } else {
-    const { data, error } = await supabase.from('characters').insert(npcFinal).select().single()
-    if (error) return alert("Error al guardar: " + error.message)
-    
-    if (form.value.tiendaDestino && !props.tiendaFijaId) {
-      await supabase.from('tiendas_sesion').update({ npc_id: data.id }).eq('id', form.value.tiendaDestino)
+  guardandoNpc.value = true
+  try {
+    const npcFinal = {
+      tipo: 'npc',
+      campaign_id: idCampanaValido,
+      nombre_pj: form.value.nombre,
+      raza: form.value.raza,
+      clase: form.value.trabajo,
+      nivel: form.value.nivel,
+      alineamiento: form.value.alineamiento,
+      imagen_url: form.value.imagen_url || null,
+      fuerza: form.value.fuerza,
+      destreza: form.value.destreza,
+      constitucion: form.value.constitucion,
+      inteligencia: form.value.inteligencia,
+      sabiduria: form.value.sabiduria,
+      carisma: form.value.carisma,
+      hp_max: form.value.hp_max,
+      hp_actual: Math.min(props.npcEditando?.hp_actual ?? form.value.hp_max, form.value.hp_max), 
+      clase_armadura: form.value.clase_armadura,
+      velocidad: parseInt(form.value.velocidad) || 30,
+      notas: form.value.notas,
+      inventario: props.npcEditando ? props.npcEditando.inventario : []
     }
-    emit('guardar-npc', data)
-  }
+
+    if (props.npcEditando) {
+      const { data, error } = await supabase.from('characters').update(npcFinal).eq('id', props.npcEditando.id).select().single()
+      if (error) return alert("Error al editar: " + error.message)
+      emit('guardar-npc', data)
+    } else {
+      const { data, error } = await supabase.from('characters').insert(npcFinal).select().single()
+      if (error) return alert("Error al guardar: " + error.message)
+
+      if (form.value.tiendaDestino && !props.tiendaFijaId) {
+        const { data: local, error: errorLocal } = await supabase.from('tiendas_sesion').select('empleados')
+          .eq('campaign_id', props.campaignId).eq('id', form.value.tiendaDestino).single()
+        if (errorLocal) avisar('Se creó el NPC. No se pudo abrir el local para asignarlo.', true)
+        else {
+          const { error } = await supabase.from('tiendas_sesion').update({ empleados: [...new Set([...(local.empleados || []), data.id])] })
+            .eq('id', form.value.tiendaDestino).eq('campaign_id', props.campaignId).select('id').single()
+          if (error) avisar('Se creó el NPC, pero no se pudo asignar al local.', true)
+        }
+      }
+      emit('guardar-npc', data)
+    }
+  } finally { guardandoNpc.value = false }
 }
 
 onMounted(() => { 
@@ -578,7 +591,7 @@ onMounted(() => {
 
       <div class="acciones-modal">
         <button class="btn-cancelar" @click="emit('cerrar')">{{ props.npcEditando ? 'Cancelar Cambios' : 'Descartar' }}</button>
-        <button class="btn-accion-dm dorado" @click="procesarYGuardar">✨ {{ props.npcEditando ? 'Guardar Cambios' : 'Sellar e Invocar' }}</button>
+        <button class="btn-accion-dm dorado" :disabled="guardandoNpc" @click="procesarYGuardar">✨ {{ props.npcEditando ? 'Guardar Cambios' : 'Sellar e Invocar' }}</button>
       </div>
     </div>
   </div>
@@ -639,4 +652,12 @@ optgroup option { color: white; font-family: 'Inter', sans-serif; font-weight: n
 .box-retrato-preview { width: 100%; height: 110px; display: flex; justify-content: center; align-items: center; margin-bottom: 10px; }
 .retrato-npc-preview { width: 90px; height: 90px; object-fit: cover; border-radius: 50%; border: 2px solid #3b82f6; }
 .retrato-fallback { font-size: 3.5rem; background: #111; width: 90px; height: 90px; display: flex; justify-content: center; align-items: center; border-radius: 50%; border: 2px dashed #334155; }
+
+.form-grande { max-height: calc(100dvh - 24px); overflow-y: auto; }
+@media (max-width: 800px) {
+  .form-grande { padding: 15px; max-width: 100%; }
+  .generador-grid { grid-template-columns: minmax(0,1fr); gap: 14px; }
+  .row-inputs, .header-modal-creacion, .acciones-modal { flex-wrap: wrap; gap: 10px; }
+  .row-inputs > .input-group { flex: 1 1 120px; min-width: 0; }
+}
 </style>

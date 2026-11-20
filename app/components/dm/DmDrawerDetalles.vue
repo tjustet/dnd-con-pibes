@@ -38,7 +38,7 @@ const calcModStr = (val) => { const m = Math.floor((val - 10) / 2); return m >= 
       <label>Puntos de Golpe</label>
       <div class="d-hp-inputs">
         <span v-if="tooltipActivo === 'drawer_hp'" class="hp-tooltip-drawer">↵ Presiona Enter para guardar</span>
-        <input type="number" v-model="entidadActiva.hp_actual" @focus="emit('set-tooltip', 'drawer_hp')" @blur="emit('set-tooltip', null)" @keyup.enter="emit('guardar-hp', $event, entidadActiva, tipoEntidadActiva)" />
+        <input type="number" v-model="entidadActiva.hp_actual" @focus="emit('set-tooltip', 'drawer_hp')" @blur="emit('set-tooltip', null)" @keyup.enter="$event.target.blur()" @change="emit('guardar-hp', $event, entidadActiva, tipoEntidadActiva)" />
         <span>/ {{ entidadActiva.hp_max }}</span>
       </div>
     </div>
