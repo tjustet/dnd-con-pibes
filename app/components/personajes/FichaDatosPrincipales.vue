@@ -26,17 +26,17 @@ const cerrarImagen = () => { imagenAmpliada.value = false }
       <img
         v-if="pj.imagen_url"
         :src="pj.imagen_url"
-        class="avatar-img"
+        class="avatar-img" :alt="pj.nombre_pj || 'Retrato del personaje'"
         :class="{ 'avatar-clickeable': !modoEdicion }"
         @click="abrirImagen"
       />
       <div v-else class="avatar-placeholder">🛡️</div>
-      <input v-if="modoEdicion" v-model="pj.imagen_url" placeholder="URL imagen" class="input-fino mt-1" />
+      <input v-if="modoEdicion" v-model="pj.imagen_url" aria-label="URL del retrato" placeholder="URL del retrato" class="input-fino mt-1" />
     </div>
 
     <div class="datos-identidad">
       <div class="nombre-box">
-        <input v-if="modoEdicion" v-model="pj.nombre_pj" placeholder="Nombre" class="input-titulo" />
+        <input v-if="modoEdicion" v-model="pj.nombre_pj" aria-label="Nombre del personaje" placeholder="Nombre del personaje" class="input-titulo" />
         <h1 v-else class="texto-titulo">{{ pj.nombre_pj || 'Sin nombre' }}</h1>
       </div>
       

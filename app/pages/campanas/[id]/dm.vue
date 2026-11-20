@@ -124,11 +124,17 @@ function guardarMesaDb() {
 const agregarDadoDm = (caras) => dmPool.value.push(caras)
 const limpiarPoolDm = () => { dmPool.value = []; dmBono.value = 0; dmDadosEnMesa.value = []; dmResultadoFinal.value = 0 }
 
+const quitarDadoDm = (caras) => {
+  const indice = dmPool.value.lastIndexOf(caras)
+  if (!dmTirando.value && indice >= 0) dmPool.value.splice(indice, 1)
+}
+
 const tirarPoolDm = (tituloPerso = null) => {
   if (dmTirando.value || !dmPool.value.length) return
   dmTirando.value = true
   dmResultadoFinal.value = 0
   const arrayDeCaras = [...dmPool.value]
+  const oculto = dadosOcultos.value
   const bonoNum = parseInt(dmBono.value) || 0
 
   const intervalo = setInterval(() => { dmDadosEnMesa.value = arrayDeCaras.map(c => ({ caras: c, valor: Math.floor(Math.random() * c) + 1 })) }, 100)
@@ -147,7 +153,7 @@ const tirarPoolDm = (tituloPerso = null) => {
       dadosStr: dmDadosEnMesa.value.map(d => `d${d.caras}[${d.valor}]`).join(', '),
       bono: bonoNum,
       total: dmResultadoFinal.value,
-      oculto: dadosOcultos.value,
+      oculto,
       targetAsignado: '',
       mostrarAsignador: false
     }
@@ -159,6 +165,7 @@ const tirarPoolDm = (tituloPerso = null) => {
 }
 
 const tirarDesdeDrawer = (titulo, caras, bono) => {
+  if (dmTirando.value) return
   limpiarPoolDm()
   if (Array.isArray(caras)) caras.forEach(c => agregarDadoDm(c))
   else agregarDadoDm(caras)
@@ -475,6 +482,7 @@ onMounted(() => { cargarMesaDM() })
             @curar-dano="curarDano"
             @aplicar-efecto="aplicarEfectoDesdeHistorial"
             @agregar-dado="agregarDadoDm"
+            @quitar-dado="quitarDadoDm"
             @limpiar-pool="limpiarPoolDm"
             @tirar-pool="tirarPoolDm"
           />

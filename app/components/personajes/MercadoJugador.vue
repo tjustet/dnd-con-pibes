@@ -12,6 +12,8 @@ const ocupado = ref(false)
 const total = computed(() => items.value.reduce((s, i) => s + i.precio * i.unidades, 0))
 const pendiente = computed(() => pedido.value?.estado === 'pagando' && pedido.value?.sesion === tienda.value?.sesion)
 const saldo = computed(() => cobreDe(props.pj))
+const solicitudes = ref([])
+const solicitudesVisibles = computed(() => solicitudes.value.filter(s => !bloqueados.value.includes(s.de)))
 let canal
 let timer
 let vigente = true
@@ -29,6 +31,10 @@ async function refrescar() {
     const mesa = data?.mesa_estado || {}
     const catalogo = mesa.tiendaVisible
     const permitida = catalogo && (catalogo.targets == null || catalogo.targets === 'all' || catalogo.targets.includes(props.pj.id))
+    solicitudes.value = Object.entries(mesa.carritos || {}).filter(([, cart]) =>
+      catalogo?.id && cart?.tienda === catalogo.id && cart.sesion === catalogo.sesion &&
+      cart.estado === 'comprando' && cart.ayudante === props.pj.id && cart.total > 0
+    ).map(([de, cart]) => ({ de, id: cart.id, monto: cart.total }))
     const nueva = permitida ? catalogo : null
     if (nueva?.sesion !== tienda.value?.sesion || nueva?.id !== tienda.value?.id) visible.value = true
     tienda.value = nueva
@@ -43,19 +49,21 @@ async function refrescar() {
   } finally { leyendo = false }
 }
 
-async function cambiarCarrito(lineas, estado) {
+async function cambiarCarrito(lineas, estado, ayudante = null) {
   if (ocupado.value || pendiente.value || !tienda.value?.id) return
   ocupado.value = true
   version++
   const tiendaActual = tienda.value
   const id = idOperacion()
   try {
-    const nuevo = { id, estado, tienda: tiendaActual.id, sesion: tiendaActual.sesion, items: lineas,
+    const nuevo = { id, estado, ayudante, tienda: tiendaActual.id, sesion: tiendaActual.sesion, items: lineas,
       total: lineas.reduce((s, i) => s + i.precio * i.unidades, 0) }
     const previo = pedido.value?.id
+    const estadoPrevio = pedido.value?.estado
     await actualizarCampana(db, props.pj.campaign_id, 'mesa_estado', valor => {
       const mesa = estadoInicial(valor)
-      if (mesa.tiendaVisible?.sesion !== nuevo.sesion || mesa.carritos[props.pj.id]?.id !== previo)
+      if (mesa.tiendaVisible?.sesion !== nuevo.sesion || mesa.carritos[props.pj.id]?.id !== previo ||
+          mesa.carritos[props.pj.id]?.estado !== estadoPrevio)
         throw new Error('El catálogo o el pedido cambió. Volvé a intentarlo.')
       mesa.carritos[props.pj.id] = nuevo
       return mesa
@@ -75,42 +83,49 @@ function agregar(item) {
   return cambiarCarrito(lineas, 'comprando')
 }
 
-async function pedirAyuda(id) {
-  if (!canal || !pedido.value || !total.value) return
-  const resultado = await canal.send({ type: 'broadcast', event: 'auxilio_financiero', payload: {
-    para: id, de: props.pj.id, nombre: props.pj.nombre_pj, pedido: pedido.value.id, monto: total.value
-  } })
-  avisar(resultado === 'ok' ? 'Solicitud enviada.' : 'No se pudo enviar la solicitud.', resultado !== 'ok')
+function nombreAliado(id) {
+  return companeros.value.find(c => c.id === id)?.nombre_pj || 'tu compañero'
 }
 
-async function recibirAyuda({ payload }) {
-  if (!vigente || payload.para !== props.pj.id || bloqueados.value.includes(payload.de)) return
-  const monto = Number(payload.monto)
-  if (!Number.isSafeInteger(monto) || monto <= 0 || monto > saldo.value) return
-  if (!confirm(`¿Pagar hasta ${monto} pc por el pedido de ${payload.nombre} cuando lo apruebe el DM?`)) return
+async function responderAyuda(solicitud, aceptar) {
+  if (ocupado.value) return
+  if (aceptar && saldo.value < solicitud.monto) return avisar('Tu saldo no alcanza para este pedido.', true)
+  ocupado.value = true
+  version++
   try {
-    const { error } = await db.from('dnd_aportes').insert({ campana: props.pj.campaign_id,
-      personaje: props.pj.id, beneficiario: payload.de, pedido: payload.pedido, maximo: monto })
-    if (error && error.code !== '23505') throw error
+    if (aceptar) {
+      const { error } = await db.from('dnd_aportes').insert({
+        campana: props.pj.campaign_id, personaje: props.pj.id, beneficiario: solicitud.de,
+        pedido: solicitud.id, maximo: solicitud.monto
+      })
+      if (error && error.code !== '23505') throw error
+    }
     await actualizarCampana(db, props.pj.campaign_id, 'mesa_estado', valor => {
-      const cart = valor?.carritos?.[payload.de]
-      if (cart?.id !== payload.pedido || cart.total !== monto || cart.estado !== 'comprando')
-        throw new Error('El pedido ya cambió.')
-      cart.estado = 'pagando'
-      cart.patrocinador = props.pj.id
+      const cart = valor?.carritos?.[solicitud.de]
+      if (cart?.id !== solicitud.id || cart.ayudante !== props.pj.id || cart.estado !== 'comprando' ||
+          cart.total !== solicitud.monto || cart.sesion !== valor.tiendaVisible?.sesion || cart.tienda !== valor.tiendaVisible?.id)
+        throw new Error('El pedido cambió o la tienda cerró.')
+      cart.ayudante = null
+      if (aceptar) {
+        cart.patrocinador = props.pj.id
+        cart.estado = 'pagando'
+      } else cart.ayudaRechazadaPor = props.pj.id
       return valor
     })
-    avisar('Ayuda autorizada. El pedido está en la mesa del DM.')
+    avisar(aceptar ? 'Ayuda autorizada. Falta que el DM apruebe el pedido.' : 'Solicitud rechazada.')
   } catch (e) { avisar(e.message, true) }
+  finally { ocupado.value = false; void refrescar() }
 }
 
 onMounted(async () => {
   if (!props.pj.campaign_id || props.esNuevo) return
-  canal = db.channel('partida_' + props.pj.campaign_id).on('broadcast', { event: 'auxilio_financiero' }, recibirAyuda).subscribe()
+  canal = db.channel('mercado_' + props.pj.id).on('postgres_changes', {
+    event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${props.pj.campaign_id}`
+  }, refrescar).subscribe()
   timer = setInterval(refrescar, 2000)
   void refrescar()
   const { data } = await db.from('characters').select('id,nombre_pj').eq('campaign_id', props.pj.campaign_id)
-    .eq('tipo', 'pj').neq('id', props.pj.id)
+    .or('tipo.eq.pj,tipo.is.null').neq('id', props.pj.id)
   if (vigente) companeros.value = data || []
 })
 onBeforeUnmount(() => {
@@ -121,9 +136,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <aside v-if="tienda" class="mercado-pj" aria-label="Tienda proyectada">
-    <button class="abrir-tienda" :aria-expanded="visible" @click="visible = !visible">🛒 {{ tienda.nombre }} · {{ visible ? 'Ocultar' : 'Abrir' }}</button>
-    <div v-if="visible" class="contenido-mercado">
+  <aside v-if="tienda || solicitudesVisibles.length" class="mercado-pj" aria-label="Tienda proyectada">
+    <section v-if="solicitudesVisibles.length" class="ayudas-recibidas" aria-label="Ayuda entre aliados">
+      <article v-for="solicitud in solicitudesVisibles" :key="solicitud.id">
+        <p><strong>{{ nombreAliado(solicitud.de) }}</strong> te pide pagar {{ solicitud.monto }} pc por su compra.</p>
+        <small>{{ saldo < solicitud.monto ? 'Tu saldo no alcanza.' : 'Se cobra cuando el DM aprueba la compra.' }}</small>
+        <div>
+          <button type="button" :disabled="ocupado || saldo < solicitud.monto" @click="responderAyuda(solicitud, true)">Autorizar pago</button>
+          <button type="button" :disabled="ocupado" @click="responderAyuda(solicitud, false)">Rechazar</button>
+        </div>
+      </article>
+    </section>
+    <button v-if="tienda" class="abrir-tienda" :aria-expanded="visible" @click="visible = !visible">🛒 {{ tienda.nombre }} · {{ visible ? 'Ocultar' : 'Abrir' }}</button>
+    <div v-if="tienda && visible" class="contenido-mercado">
       <p>Tu saldo <strong>{{ saldo }} pc</strong></p>
       <p v-if="!tienda.id">Pedile al DM que vuelva a proyectar esta tienda.</p>
       <p v-else-if="!tienda.inventario?.length">El DM todavía no reveló objetos.</p>
@@ -140,8 +165,14 @@ onBeforeUnmount(() => {
         <button class="pagar" :disabled="ocupado || pendiente || saldo < total" @click="cambiarCarrito(items, 'pagando')">
           {{ pendiente ? 'Esperando al DM' : 'Ofrecer pago' }} · {{ total }} pc
         </button>
-        <details v-if="!pendiente && companeros.length"><summary>Pedir ayuda a un compañero</summary>
-          <button v-for="c in companeros" :key="c.id" @click="pedirAyuda(c.id)">{{ c.nombre_pj }}</button>
+        <p v-if="pedido?.ayudante" class="aviso-ayuda" role="status">
+          Esperando a {{ nombreAliado(pedido.ayudante) }}.
+          <button type="button" :disabled="ocupado" @click="cambiarCarrito(items, 'comprando')">Cancelar solicitud</button>
+        </p>
+        <p v-else-if="pendiente && pedido?.patrocinador">Paga {{ nombreAliado(pedido.patrocinador) }} cuando el DM apruebe.</p>
+        <p v-else-if="pedido?.ayudaRechazadaPor">{{ nombreAliado(pedido.ayudaRechazadaPor) }} rechazó la solicitud.</p>
+        <details v-if="!pendiente && !pedido?.ayudante && total > 0 && companeros.length"><summary>Pedir ayuda a un compañero</summary>
+          <button v-for="c in companeros" :key="c.id" :disabled="ocupado" @click="cambiarCarrito(items, 'comprando', c.id)">{{ c.nombre_pj }}</button>
         </details>
       </template>
       <details v-if="companeros.length"><summary>Solicitudes de ayuda</summary>
@@ -160,4 +191,11 @@ onBeforeUnmount(() => {
 .contenido-mercado :is(button,summary) { padding: 6px 9px; cursor: pointer; color: #facc15; }
 .contenido-mercado small, .contenido-mercado label { display: block; color: #aab6c5; }
 .pagar { width: 100%; margin: 10px 0; background: #291e0d; }
+.ayudas-recibidas { max-width: min(24rem,calc(100vw - 24px)); max-height: 32dvh; overflow-y: auto; padding: .8rem; border: 1px solid #967440; border-radius: 8px; background: #201b15; }
+.ayudas-recibidas p { margin: 0; }
+.ayudas-recibidas small { color: #d7c8aa; }
+.ayudas-recibidas button { margin: .5rem .45rem 0 0; padding: .45rem .65rem; border-radius: 5px; border: 1px solid #776349; }
+.ayudas-recibidas button:first-child { color: #ffdf99; }
+.ayudas-recibidas ~ .contenido-mercado { max-height: 45dvh; }
+.aviso-ayuda { color: #f5d482; }
 </style>

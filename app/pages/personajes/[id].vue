@@ -15,14 +15,15 @@ const mostrandoGeneradorInteligente = ref(false)
 // Esta función recibe el NPC ya guardado en BD desde el modal
 const atraparNpcGenerado = (npcData) => {
   mostrandoGeneradorInteligente.value = false
-  // Acá podés agregarlo a tu lista local si querés, o tirar una alerta
-  avisar('NPC creado en la campaña.')
-  router.push('/personajes/' + npcData.id)
+  avisar('NPC creado.')
+  router.replace('/personajes/' + npcData.id)
 }
 
 const route = useRoute()
 const router = useRouter()
 const supabase = useSupabaseClient()
+const usuario = useSupabaseUser()
+const esDirectorDeCampana = ref(false)
 
 const cargando = ref(true)
 const esNuevo = ref(route.params.id === 'nuevo')
@@ -63,14 +64,19 @@ watch([() => pj.value.hp_actual, () => pj.value.hp_max], ([newActual, newMax]) =
   if (newActual > newMax) pj.value.hp_actual = newMax
 })
 
-const cancelarEdicion = () => { if (esNuevo.value) { router.back() } else { cargarFicha(); modoEdicion.value = false } }
+const tipoFicha = computed(() => ({ npc: 'NPC', enemigo: 'enemigo' })[pj.value.tipo] || 'personaje')
+const volver = computed(() => pj.value.campaign_id && (esNuevo.value || esDirectorDeCampana.value) ? `/campanas/${pj.value.campaign_id}` : '/dashboard')
+const cancelarEdicion = () => {
+  if (esNuevo.value) return router.push(volver.value)
+  cargarFicha()
+}
 
 const cargarFicha = async () => {
   cargando.value = true
   errorFicha.value = false
   if (canalVision) { await supabase.removeChannel(canalVision); canalVision = null }
   if (canalPjSync) { await supabase.removeChannel(canalPjSync); canalPjSync = null }
-  const { data: perfilesData } = await supabase.from('profiles').select('email, nombre')
+  const { data: perfilesData } = await supabase.from('profiles').select('id, email, nombre')
   if (perfilesData) listaPerfiles.value = perfilesData
 
   if (!esNuevo.value) {
@@ -82,13 +88,18 @@ const cargarFicha = async () => {
         Object.assign(data, { monedas_platino: Number(data.monedas.ppt) || 0, monedas_oro: Number(data.monedas.po) || 0,
           monedas_plata: Number(data.monedas.plata) || 0, monedas_cobre: Number(data.monedas.pc) || 0 })
       }
-      pj.value = { ...data, notas_array: notasDeFicha(data.notas) }
+      pj.value = { ...data, tipo: data.tipo || 'pj', notas_array: notasDeFicha(data.notas) }
       baseFicha = JSON.parse(JSON.stringify(pj.value))
       modoEdicion.value = false 
       
       if (pj.value.campaign_id) {
-        const { data: campData } = await supabase.from('campaigns').select('mesa_estado').eq('id', pj.value.campaign_id).single()
+        const { data: campData } = await supabase.from('campaigns').select('dm_id, mesa_estado').eq('id', pj.value.campaign_id).single()
         if (!montada) return
+        const director = listaPerfiles.value.find(perfil => perfil.id === campData?.dm_id)
+        esDirectorDeCampana.value = !!campData?.dm_id && (
+          campData.dm_id === (usuario.value?.sub || usuario.value?.id) ||
+          !!director?.email && director.email.toLowerCase() === usuario.value?.email?.toLowerCase()
+        )
         visionRevelada.value = campData?.mesa_estado?.entidadVisible ?? null
 
         canalVision = supabase.channel('vision_jugador_' + pj.value.id).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${pj.value.campaign_id}` }, (payload) => {
@@ -191,21 +202,24 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
       </div>
     </div>
 
-    <MesaDados v-if="!cargando && pj.campaign_id" ref="mesaRef" :jugador="pj.nombre_pj" :campana-id="pj.campaign_id" />
+    <MesaDados v-if="!cargando && !esNuevo && pj.campaign_id" ref="mesaRef" :jugador="pj.nombre_pj" :campana-id="pj.campaign_id" />
 
     <div v-if="cargando" class="cargando">Abriendo grimorio...</div>
     
     <div v-else-if="errorFicha" class="estado-partida">No se pudo abrir esta ficha. <button @click="cargarFicha">Reintentar</button> <NuxtLink to="/dashboard">Volver</NuxtLink></div>
     <div v-else class="contenedor-principal">
-      <div class="controles-superiores">
-        <button @click="router.push(pj.campaign_id ? `/campanas/${pj.campaign_id}` : '/dashboard')" class="btn-ghost">← Regresar</button>
-        <div class="acciones-derecha">
-          <button v-if="modoEdicion" @click="cancelarEdicion" class="btn-rojo">✖ Cancelar</button>
-          <button v-if="!modoEdicion" @click="modoEdicion = true" class="btn-ghost">✏️ Editar Ficha</button>
-          <button @click="mostrandoGeneradorInteligente = true" class="btn-accion-dm dorado">✨ Creación Rápida</button>
-          <button v-if="modoEdicion" @click="preGuardarFicha" class="btn-dorado">💾 Sellar Cambios</button>
+      <header class="barra-ficha">
+        <div class="contexto-ficha">
+          <NuxtLink :to="volver">← {{ volver === '/dashboard' ? 'Tablero' : 'Campaña' }}</NuxtLink>
+          <h2>{{ esNuevo ? 'Crear ' + tipoFicha : modoEdicion ? 'Editar ' + tipoFicha : 'Ficha de ' + tipoFicha }}</h2>
         </div>
-      </div>
+        <div class="acciones-ficha">
+          <button v-if="esNuevo && pj.tipo === 'npc'" type="button" @click="mostrandoGeneradorInteligente = true">Generar NPC por oficio</button>
+          <button v-if="modoEdicion" type="button" @click="cancelarEdicion">Cancelar</button>
+          <button v-if="modoEdicion" type="button" class="principal" @click="preGuardarFicha">{{ esNuevo ? 'Crear ' + tipoFicha : 'Guardar cambios' }}</button>
+          <button v-else type="button" class="principal" @click="modoEdicion = true">Editar ficha</button>
+        </div>
+      </header>
 
       <nav class="indice-ficha" aria-label="Secciones de la ficha">
         <a href="#caracteristicas">Características</a><a href="#rasgos">Rasgos y notas</a>
@@ -223,13 +237,13 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
       </div>
     </div>
 
-    <MercadoJugador v-if="!cargando && pj.id" :pj="pj" :es-nuevo="esNuevo" />
+    <MercadoJugador v-if="!cargando && pj.id && pj.tipo === 'pj'" :pj="pj" :es-nuevo="esNuevo" />
   </div>
 
   <div v-if="modalComunidadAbierto" class="modal-overlay">
     <div class="modal-taberna">
-      <h2>🍻 Aportes a La Taberna del DM</h2>
-      <p class="taberna-desc">¡Tu conocimiento puede ayudar a otros aventureros y DMs del multiverso!</p>
+      <h2>Compartir con la comunidad</h2>
+      <p class="taberna-desc">Elegí qué querés publicar al guardar la ficha.</p>
       <div v-if="mostrarEntidadComunidad" class="seccion-comunidad-box bestiario-box">
         <h3>📖 Bestiario Público</h3>
         <label class="check-bestiario"><input type="checkbox" v-model="compartirEntidad" /> Hacer público este {{ pj.tipo === 'npc' ? 'NPC' : 'Enemigo' }}</label>
@@ -245,7 +259,7 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
       </div>
       <div class="modal-botones-taberna">
         <button class="btn-no-compartir" @click="confirmarComunidad(false)">Guardar privado</button>
-        <button class="btn-si-compartir" @click="confirmarComunidad(true)">Aceptar y Forjar</button>
+        <button class="btn-si-compartir" @click="confirmarComunidad(true)">Guardar selección</button>
       </div>
     </div>
   </div>
@@ -258,3 +272,13 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
 />
   </main>
 </template>
+
+<style scoped>
+.barra-ficha { display: flex; justify-content: space-between; align-items: end; flex-wrap: wrap; gap: 1rem; padding: .8rem 0 1rem; margin-bottom: 1rem; border-bottom: 1px solid #423a30; }
+.contexto-ficha a { color: #b9c4d4; text-decoration: underline; text-underline-offset: 3px; }
+.contexto-ficha h2 { font: 600 clamp(1.25rem, 3vw, 1.8rem)/1.15 Cinzel, Georgia, serif; color: #f3dcad; margin: .45rem 0 0; }
+.acciones-ficha { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem; }
+.acciones-ficha button { min-height: 44px; padding: .5rem .95rem; border-radius: 6px; background: #161518; border: 1px solid #48454a; color: #e6e3dd; }
+.acciones-ficha .principal { background: #e7bc73; color: #25190c; border-color: #efcf99; font-weight: 700; }
+@media(max-width: 550px) { .acciones-ficha { width: 100%; } .acciones-ficha button { flex: 1 1 auto; } }
+</style>

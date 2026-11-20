@@ -3,6 +3,15 @@ useHead({ title: 'Historial de versiones' })
 const usuario = useSupabaseUser()
 const versiones = [
   {
+    numero: '0.3.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
+    titulo: 'Dados y aliados',
+    cambios: [
+      'La mesa separa el resultado del tapete y permite quitar un solo dado de la selección.',
+      'Cada grupo de la campaña tiene un acceso para crear su tipo de ficha.',
+      'Los pedidos de ayuda para pagar siguen disponibles al volver a abrir la ficha del aliado.'
+    ]
+  },
+  {
     numero: '0.2.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
     titulo: 'La taberna y sus mercados',
     cambios: [

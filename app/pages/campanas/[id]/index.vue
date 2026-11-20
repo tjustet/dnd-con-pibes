@@ -100,20 +100,15 @@ onMounted(() => {
         </div>
 
         <div class="header-der">
-          <details class="dropdown-creacion" @keydown.esc="$event.currentTarget.open = false">
-            <summary class="btn-nuevo">+ Crear entidad</summary>
-            <div class="dropdown-menu">
-              <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=pj`)">Jugador</button>
-              <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=npc`)">NPC / Aliado</button>
-              <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=enemigo`)">Monstruo / Enemigo</button>
-            </div>
-          </details>
           <button @click="nuevaUrlImagen = campana.imagen_url || ''; editandoImagen = true" class="btn-herramienta" title="Cambiar Portada">🖼️</button>
 
         </div>
       </div>
 
-      <h2 class="subtitulo-seccion">Héroes de la Sesión</h2>
+      <div class="seccion-fichas">
+            <h2 class="subtitulo-seccion">Héroes de la Sesión</h2>
+            <NuxtLink :to="{ path: '/personajes/nuevo', query: { campana: route.params.id, tipo: 'pj' } }" class="crear-ficha">+ Crear personaje</NuxtLink>
+          </div>
       <div class="grilla-personajes">
         <div v-for="pj in listaPersonajes" :key="pj.id" class="tarjeta-pj">
           <div class="avatar-zona">
@@ -148,7 +143,10 @@ onMounted(() => {
       <div class="grilla-entidades-bajas">
         
         <div class="bloque-entidades">
-          <h2 class="subtitulo-seccion texto-verde">NPCs de la Campaña</h2>
+          <div class="seccion-fichas">
+            <h2 class="subtitulo-seccion texto-verde">NPCs de la Campaña</h2>
+            <NuxtLink :to="{ path: '/personajes/nuevo', query: { campana: route.params.id, tipo: 'npc' } }" class="crear-ficha">+ Crear NPC</NuxtLink>
+          </div>
           <div class="lista-mini">
             <NuxtLink v-for="npc in listaNpcs" :key="npc.id" class="tarjeta-mini-entidad borde-verde" :to="`/personajes/${npc.id}`">
               <div class="mini-avatar npc-bg"><span v-if="!npc.imagen_url">👤</span><img v-else :src="npc.imagen_url" loading="lazy" alt="" /></div>
@@ -162,7 +160,10 @@ onMounted(() => {
         </div>
 
         <div class="bloque-entidades">
-          <h2 class="subtitulo-seccion texto-rojo">Enemigos / Monstruos</h2>
+          <div class="seccion-fichas">
+            <h2 class="subtitulo-seccion texto-rojo">Enemigos / Monstruos</h2>
+            <NuxtLink :to="{ path: '/personajes/nuevo', query: { campana: route.params.id, tipo: 'enemigo' } }" class="crear-ficha">+ Crear enemigo</NuxtLink>
+          </div>
           <div class="lista-mini">
             <NuxtLink v-for="en in listaEnemigos" :key="en.id" class="tarjeta-mini-entidad borde-rojo" :to="`/personajes/${en.id}`">
               <div class="mini-avatar en-bg"><span v-if="!en.imagen_url">💀</span><img v-else :src="en.imagen_url" loading="lazy" alt="" /></div>
@@ -220,13 +221,6 @@ onMounted(() => {
 .btn-herramienta { background: transparent; border: 1px solid #475569; color: #cbd5e1; padding: 0.6rem 1rem; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
 .btn-herramienta:hover { background: #1e293b; border-color: #94a3b8; }
 
-/* DROPDOWN CREACIÓN */
-.dropdown-creacion { position: relative; display: inline-block; }
-.dropdown-creacion[open] .dropdown-menu { display: flex; }
-.dropdown-menu { display: none; position: absolute; right: 0; top: 100%; background: #0a0a0c; border: 1px solid #3b82f6; border-radius: 8px; flex-direction: column; min-width: 180px; z-index: 50; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.8); }
-.dropdown-menu button { background: transparent; border: none; border-bottom: 1px solid #1e293b; color: white; padding: 0.8rem 1rem; text-align: left; cursor: pointer; transition: 0.2s; }
-.dropdown-menu button:hover { background: #1e3a8a; }
-.dropdown-menu button:last-child { border-bottom: none; }
 
 .btn-regresar { background: transparent; border: 1px solid #334155; color: #94a3b8; padding: 0.4rem 0.8rem; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 0.85rem; transition: 0.2s; }
 .btn-regresar:hover { background: #1e293b; color: white; }
@@ -241,10 +235,6 @@ onMounted(() => {
 .btn-borrar-campana { background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; color: #fca5a5; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; }
 .btn-borrar-campana:hover { background: #ef4444; color: white; }
 
-.btn-nuevo { background: transparent; border: 1px dashed #3b82f6; color: #3b82f6; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; font-size: 0.9rem; }
-.btn-nuevo:hover { background: #3b82f6; color: white; box-shadow: 0 0 15px rgba(59, 130, 246, 0.4); }
-.btn-nuevo.rojo { border-color: #ef4444; color: #fca5a5; }
-.btn-nuevo.rojo:hover { background: #ef4444; color: white; box-shadow: 0 0 15px rgba(239, 68, 68, 0.4); }
 
 .subtitulo-seccion { font-family: 'Cinzel', serif; font-size: 1.4rem; color: white; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
 
@@ -312,8 +302,6 @@ onMounted(() => {
 .btn-accion-dm.dorado { background: #b45309; border: 1px solid #d97706; color: white; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: bold; font-family: 'Cinzel', serif; box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); transition: 0.2s; }
 .btn-accion-dm.dorado:hover { background: #d97706; transform: scale(1.02); }
 
-.btn-nuevo { cursor: pointer; }
-.dropdown-menu { min-width: min(190px,80vw); }
 @media (max-width: 820px) {
   .pantalla-campana { padding: 12px; }
   .header-campana { align-items: stretch; padding: 12px; gap: 12px; }
@@ -321,7 +309,6 @@ onMounted(() => {
   .header-izq { width: 100%; }
   .titulo-campana { margin: 0; font-size: clamp(1.3rem,5vw,2rem); }
   .header-centro > button { flex: 1 1 auto; }
-  .dropdown-menu { left: 0; right: auto; }
   .grilla-personajes { grid-template-columns: minmax(0,1fr); }
   .tarjeta-pj { flex-wrap: wrap; gap: 12px; }
   .bloque-entidades { padding: 12px; }
@@ -348,4 +335,8 @@ onMounted(() => {
 .ajustes summary { cursor: pointer; color: #b7beca; padding: .5rem 0; }
 .tarjeta-mini-entidad { text-decoration: none; }
 @media (max-width: 550px) { .accion-zona { border: 0; padding: 0; margin: 0; height: auto; } }
+.seccion-fichas { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: .6rem; margin-bottom: 1rem; border-bottom: 1px solid #35312a; padding-bottom: .75rem; }
+.seccion-fichas h2 { margin: 0; padding: 0; border: 0; }
+.crear-ficha { display: inline-flex; align-items: center; min-height: 44px; padding: .5rem .85rem; border: 1px solid #725731; border-radius: 6px; color: #ffdc9d; background: #2b2217; font-weight: 600; }
+.crear-ficha:hover { background: #44331e; }
 </style>
