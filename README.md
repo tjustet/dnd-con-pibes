@@ -144,7 +144,7 @@ Check out the [deployment documentation](https://nuxt.com/docs/getting-started/d
 Esta copia conserva el lockfile del proyecto (Nuxt 4.4.8). Usá Node 22.12 o superior de la rama 22, o Node 24.11 o superior de la rama 24.
 
 1. Extraé el proyecto en una carpeta nueva y copiá tu archivo `.env` de la app original a la raíz. Los componentes y el middleware ahora viven en `app/components` y `app/middleware`.
-2. Para habilitar ventas, pedidos y ayuda entre jugadores, ejecutá `supabase/migrations/202611200001_comercio.sql` en el SQL Editor del proyecto de D&D que ya contiene tus tablas. El script agrega las tablas de operaciones y autorizaciones y la función que confirma la venta. Usa el esquema público existente de personajes, campañas, perfiles, tiendas y catálogos. Conserva las equivalencias de monedas de tu aplicación.
+2. En una instalación nueva con el esquema base de D&D, aplicá las migraciones de `supabase/migrations` en orden. Habilitan la búsqueda de notas, la venta y la forja de objetos. Usa el esquema público existente de personajes, campañas, perfiles, tiendas y catálogos. Conserva las equivalencias de monedas de tu aplicación.
 3. Desde la raíz ejecutá los comandos siguientes.
 
 ```bash

@@ -238,3 +238,7 @@ input:checked + .slider:before { transform: translateX(20px); }
 .header-historial-dm { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 0.5rem; margin-bottom: 1rem; flex-shrink: 0; }
 .btn-limpiar-historial { background: transparent; border: 1px solid #475569; color: #cbd5e1; border-radius: 4px; padding: 0.2rem 0.5rem; cursor: pointer; transition: 0.2s; font-size: 0.9rem; }
 .btn-limpiar-historial:hover { background: #7f1d1d; border-color: #ef4444; }
+.mesa-dm-pantalla .panel-superior { display: grid; gap: .85rem; border-color: #40392e; border-top: 2px solid #ae8847; }
+.mesa-dm-pantalla .botones-dm-acciones { border-top: 1px solid #2d2b2a; padding-top: .8rem; }
+.mesa-dm-pantalla .botones-dm-acciones button { min-height: 42px; }
+.switch input:focus-visible + .slider { outline: 2px solid #93c5fd; outline-offset: 3px; }

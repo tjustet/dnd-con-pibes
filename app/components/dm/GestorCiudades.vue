@@ -25,6 +25,12 @@ const categoriasTiendasPlan = [
 
 const vista = ref('lista') 
 const ciudades = ref([])
+const buscandoCiudades = ref(false)
+const errorCiudades = ref(false)
+const busquedaCiudad = ref('')
+const ciudadesVisibles = computed(() => ciudades.value.filter(c =>
+  c.nombre?.toLocaleLowerCase().includes(busquedaCiudad.value.trim().toLocaleLowerCase())
+))
 const tiendasDeCiudadActual = ref([])
 const ciudadActiva = ref(null)
 const tiendaActiva = ref(null)
@@ -56,7 +62,7 @@ const inventarioFiltrado = computed(() => {
   if (qCant !== 1 && qCant !== '' && qCant !== null) lista = lista.filter(i => i.cantidad_en_tienda === qCant)
   if (qPrecio !== 0 && qPrecio !== '' && qPrecio !== null) lista = lista.filter(i => i.precio_cobre === qPrecio)
   if (qBono) lista = lista.filter(i => (i.bono || '').toLowerCase().includes(qBono))
-  if (qNvl !== 0) lista = lista.filter(i => i.nivel_objeto === qNvl)
+  if (qNvl !== 0) lista = lista.filter(i => (i.nivel_objeto ?? i.nivel ?? 0) === qNvl)
 
   return lista
 })
@@ -90,14 +96,17 @@ const autoSeleccionarTiendas = () => {
 }
 
 const cargarCiudades = async () => {
-  const { data } = await supabase.from('ciudades').select('*').order('nombre')
+  buscandoCiudades.value = true
+  const { data, error } = await supabase.from('ciudades').select('id, nombre, tamano, descripcion').order('nombre')
+  buscandoCiudades.value = false
+  errorCiudades.value = Boolean(error)
   if (data) ciudades.value = data
 }
 
 const crearCiudad = async () => {
-  if (!formCiudad.value.nombre) return alert("Ponle un nombre al asentamiento.")
+  if (!formCiudad.value.nombre) return avisar("Ponle un nombre al asentamiento.", true)
   const { data: nuevaCiu, error } = await supabase.from('ciudades').insert([formCiudad.value]).select().single()
-  if (error) return alert(error.message)
+  if (error) return avisar(error.message, true)
 
   const tAInsertar = tiendasSeleccionadasParaCrear.value.map(tipo => ({
     ciudad_id: nuevaCiu.id,
@@ -162,7 +171,7 @@ const agregarNuevaTiendaLocal = async () => {
     empleados: []
   }]).select().single()
 
-  if (error) return alert("Error creando tienda: " + error.message)
+  if (error) return avisar("Error creando tienda: " + error.message, true)
   
   tiendasDeCiudadActual.value.push(data)
   modalNuevaTienda.value = false
@@ -238,7 +247,8 @@ const guardarCambiosTienda = async () => {
     nombre_personalizado: tiendaActiva.value.nombre_personalizado,
     imagen_url: tiendaActiva.value.imagen_url
   }).eq('id', tiendaActiva.value.id)
-  if (error) alert("Error: " + error.message); else alert("Guardado.")
+  if (error) return avisar(error.message, true)
+  avisar("Local guardado.")
 }
 
 const borrarTienda = async () => {
@@ -251,7 +261,7 @@ const borrarTienda = async () => {
 
 const confirmarAsignarExistente = async () => {
   if (!npcSeleccionadoAsignar.value) return
-  if (tiendaActiva.value.empleados.includes(npcSeleccionadoAsignar.value)) return alert("Ese empleado ya trabaja aquí.")
+  if (tiendaActiva.value.empleados.includes(npcSeleccionadoAsignar.value)) return avisar("Ese empleado ya trabaja aquí.", true)
   
   const { data } = await supabase.from('characters').select('*').eq('id', npcSeleccionadoAsignar.value).single()
   if (data) {
@@ -309,7 +319,7 @@ const syncInventarioBD = async () => {
 
 // --- STOCK AUTOMÁTICO RESTRINGIDO (Solo rellena lo que ya está) ---
 const generarStockAutomatico = async () => {
-  if (inventarioMostrado.value.length === 0) return alert("Esta tienda está vacía. Forja o importa ítems primero. El reabastecimiento solo rellena el stock de los objetos que el local ya comercializa.")
+  if (inventarioMostrado.value.length === 0) return avisar("Esta tienda está vacía. Forja o importa ítems primero. El reabastecimiento solo rellena el stock de los objetos que el local ya comercializa.", true)
   
   let maxNivelEmpleado = 2
   if (empleadosCargados.value.length > 0) {
@@ -327,37 +337,32 @@ const generarStockAutomatico = async () => {
   })
 
   if (!await syncInventarioBD()) return
-  alert("Vidrieras reabastecidas con éxito basadas en el nivel de los empleados.")
+  avisar("Stock actualizado según el nivel de los empleados.")
 }
 
 // --- FORJAR ITEM NUEVO (Guarda en BD general, luego vincula) ---
+const forjando = ref(false)
 const agregarObjetoALocal = async () => {
-  if (!Number.isSafeInteger(Number(nuevoItemForm.value.cantidad)) || Number(nuevoItemForm.value.cantidad) < 1 ||
-    !Number.isSafeInteger(Number(nuevoItemForm.value.precio_cobre)) || Number(nuevoItemForm.value.precio_cobre) < 0) return avisar('Revisá la cantidad y el precio.', true)
-  if(!nuevoItemForm.value.nombre) return alert("Escribe el nombre del objeto a forjar.")
-  
-  const objInsertar = {
-    campaign_id: route.params.id,
-    nombre: nuevoItemForm.value.nombre,
-    precio_cobre: parseInt(nuevoItemForm.value.precio_cobre) || 0,
-    bono: nuevoItemForm.value.bono || null,
-    nivel_objeto: parseInt(nuevoItemForm.value.nivel_objeto) || 0
-  }
+  if (forjando.value) return
+  const tienda = tiendaActiva.value
+  const { nombre, cantidad, precio_cobre, bono, nivel_objeto } = nuevoItemForm.value
+  if (!nombre.trim() || !Number.isInteger(cantidad) || cantidad < 1 ||
+      !Number.isInteger(precio_cobre) || precio_cobre < 0) return avisar('Revisá el nombre, la cantidad y el precio.', true)
 
-  // 1. Guardamos el objeto real en la tabla general de la campaña
-  const { data: itemCustom, error } = await supabase.from('items_jugadores').insert([objInsertar]).select().single()
-  if (error) return alert("Error al forjar: " + error.message)
-
-  // 2. Lo agregamos visualmente a la tienda actual
-  inventarioMostrado.value.push({
-    ...itemCustom,
-    cantidad_en_tienda: parseInt(nuevoItemForm.value.cantidad) || 1,
-    ref_tabla: 'items_jugadores'
-  })
-
-  // 3. Sincronizamos las referencias
-  await syncInventarioBD()
-  nuevoItemForm.value = { nombre: '', cantidad: 1, precio_cobre: 0, bono: '', nivel_objeto: 0 }
+  forjando.value = true
+  try {
+    const { error } = await supabase.rpc('dnd_forjar_objeto', { p_tienda: tienda.id, p_nombre: nombre.trim(),
+      p_cantidad: cantidad, p_precio: precio_cobre, p_bono: bono || null, p_nivel: nivel_objeto })
+    if (error) return avisar(error.message, true)
+    nuevoItemForm.value = { nombre: '', cantidad: 1, precio_cobre: 0, bono: '', nivel_objeto: 0 }
+    avisar('Objeto forjado y agregado al inventario.')
+    const { data } = await supabase.from('tiendas_sesion').select('*').eq('id', tienda.id).single()
+    if (!data) return avisar('El objeto se guardó. Volvé a abrir el local para actualizar el stock.', true)
+    if (vista.value === 'tienda-detalle' && tiendaActiva.value.id === tienda.id) {
+      Object.assign(tienda, data)
+      await abrirTienda(tienda)
+    }
+  } finally { forjando.value = false }
 }
 
 const incrementarItem = async (item) => {
@@ -386,21 +391,25 @@ onMounted(() => { cargarCiudades() })
   <div class="gestor-wrapper">
     <div class="header-gestor">
       <h2 class="titulo-principal">
-        <span v-if="vista === 'lista'">🌍 ATLAS DE LA CAMPAÑA</span>
+        <span v-if="vista === 'lista'">Atlas de ciudades</span>
         <span v-if="vista === 'crear'">🏗️ FUNDAR ASENTAMIENTO</span>
-        <span v-if="vista === 'ciudad-detalle'">🏰 URBANISMO: {{ ciudadActiva?.nombre }}</span>
-        <span v-if="vista === 'tienda-detalle'">🏪 PANEL DEL ESTABLECIMIENTO</span>
+        <span v-if="vista === 'ciudad-detalle'">{{ ciudadActiva?.nombre }}</span>
+        <span v-if="vista === 'tienda-detalle'">{{ tiendaActiva?.nombre_personalizado || tiendaActiva?.tipo }}</span>
       </h2>
       <div class="acciones-header">
-        <button v-if="vista === 'lista'" class="btn-secundario" @click="router.push(`/campanas/${route.params.id}`)">🚪 Salir al Panel</button>
-        <button v-if="vista !== 'lista'" class="btn-secundario" @click="vista = 'lista'">🗺️ Volver al Atlas</button>
+        <button v-if="vista === 'lista'" class="btn-secundario" @click="router.push(`/campanas/${route.params.id}`)">← Campaña</button>
+        <button v-if="vista !== 'lista'" class="btn-secundario" @click="vista = 'lista'">← Atlas</button>
         <button v-if="vista === 'lista'" class="btn-dorado" @click="vista = 'crear'; autoSeleccionarTiendas()">+ Fundar Asentamiento</button>
       </div>
     </div>
 
+    <input v-if="vista === 'lista' && ciudades.length" v-model="busquedaCiudad" class="input-dm buscar-ciudad" type="search" aria-label="Buscar ciudad" placeholder="Buscar ciudad…" />
     <div v-if="vista === 'lista'" class="grilla-ciudades">
-      <div v-if="ciudades.length === 0" class="mensaje-vacio">El atlas está vacío. Funda el primer asentamiento.</div>
-      <div v-for="c in ciudades" :key="c.id" class="card-ciudad" @click="abrirCiudad(c)">
+      <p v-if="buscandoCiudades" role="status">Cargando atlas…</p>
+      <p v-else-if="errorCiudades" role="alert">No se pudo abrir el atlas. <button @click="cargarCiudades">Reintentar</button></p>
+      <p v-else-if="ciudades.length && !ciudadesVisibles.length">Ninguna ciudad coincide.</p>
+      <div v-else-if="ciudades.length === 0" class="mensaje-vacio">El atlas está vacío. Funda el primer asentamiento.</div>
+      <div v-for="c in ciudadesVisibles" :key="c.id" class="card-ciudad" @click="abrirCiudad(c)" role="button" tabindex="0" @keydown.enter.prevent="abrirCiudad(c)" @keydown.space.prevent="abrirCiudad(c)">
         <div class="icono-ciudad">🏰</div>
         <div class="info-ciudad">
           <h3>{{ c.nombre }}</h3>
@@ -450,7 +459,8 @@ onMounted(() => { cargarCiudades() })
       </div>
 
       <div class="grilla-tiendas">
-        <div v-for="t in tiendasFiltradas" :key="t.id" class="card-tienda" @click="abrirTienda(t)">
+        <p v-if="!tiendasFiltradas.length">{{ busquedaTienda ? 'Ningún local coincide.' : 'Todavía no hay locales en esta ciudad.' }}</p>
+        <div v-for="t in tiendasFiltradas" :key="t.id" class="card-tienda" @click="abrirTienda(t)" role="button" tabindex="0" @keydown.enter.prevent="abrirTienda(t)" @keydown.space.prevent="abrirTienda(t)">
           <img v-if="t.imagen_url" :src="t.imagen_url" class="img-tienda-real" />
           <div v-else class="icono-tienda">🏠</div>
           <h4>{{ t.nombre_personalizado || t.tipo }}</h4>
@@ -581,7 +591,7 @@ onMounted(() => { cargarCiudades() })
                 </div>
               </div>
               
-              <button @click="agregarObjetoALocal" class="btn-dorado width-100 mt-1" style="padding: 10px; font-size: 1rem;">⚒️ Forjar y Agregar a Tienda</button>
+              <button :disabled="forjando" @click="agregarObjetoALocal" class="btn-dorado width-100 mt-1" style="padding: 10px; font-size: 1rem;">⚒️ Forjar y Agregar a Tienda</button>
             </div>
 
             <div class="tabla-inventario-scroll mt-1">
@@ -760,4 +770,6 @@ onMounted(() => { cargarCiudades() })
 }
 .etiqueta-catalogo { display: none; }
 @media (max-width: 760px) { .etiqueta-catalogo { display: block; } }
+.buscar-ciudad { width: min(100%, 28rem); margin-bottom: 1rem; }
+@media (max-width: 600px) { .barra-busqueda-tiendas { flex-wrap: wrap; gap: .6rem; } .barra-busqueda-tiendas .search-bar { flex: 1 1 14rem; } }
 </style>

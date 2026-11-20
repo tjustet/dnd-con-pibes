@@ -10,6 +10,11 @@ const props = defineProps({
 const supabase = useSupabaseClient()
 const columnas = 'id, campaign_id, titulo, contenido, created_at'
 const notas = ref([])
+const busqueda = ref('')
+const notasVisibles = computed(() => {
+  const texto = busqueda.value.trim().toLocaleLowerCase()
+  return notas.value.filter(nota => (nota.titulo || 'Sin título').toLocaleLowerCase().includes(texto))
+})
 const activa = ref(null)
 const cargando = ref(true)
 const errorCarga = ref(false)
@@ -37,6 +42,7 @@ function prepararNota(fila) {
 
 async function cargarNotas() {
   const turno = ++contexto
+  busqueda.value = ''
   notas.value = []
   activa.value = null
   creando.value = false
@@ -68,6 +74,7 @@ async function crearNota() {
     if (error) throw error
     if (turno !== contexto) return
     const nota = prepararNota(data)
+    busqueda.value = ''
     notas.value.unshift(nota)
     activa.value = nota
     await nextTick()
@@ -390,7 +397,11 @@ onBeforeUnmount(() => {
           <button type="button" @click="cargarNotas">Reintentar</button>
         </div>
         <p v-else-if="!notas.length">El grimorio está vacío.</p>
-        <div v-for="nota in notas" :key="nota.id" class="fila-nota" :class="{ elegida: activa === nota }">
+        <label v-if="notas.length" class="buscador-notas">
+          <input v-model="busqueda" type="search" aria-label="Buscar pergamino por título" placeholder="Buscar por título…" />
+        </label>
+        <p v-if="notas.length && !notasVisibles.length" role="status">Ningún pergamino coincide.</p>
+        <div v-for="nota in notasVisibles" :key="nota.id" class="fila-nota" :class="{ elegida: activa === nota }">
           <button type="button" class="elegir-nota" :aria-current="activa === nota ? 'true' : undefined"
             :title="nota.titulo" @click="activa = nota">
             {{ nota.titulo || 'Sin título' }}
@@ -635,4 +646,7 @@ onBeforeUnmount(() => {
   .modo-full .sidebar-notas { flex: 0 0 165px; max-height: 100%; }
   .modo-full .lista-pergaminos { display: block; overflow-y: auto; }
 }
+.buscador-notas { display: block; margin-bottom: 8px; }
+.buscador-notas input { width: 100%; border: 1px solid #394150; border-radius: 5px; background: #101015; color: #ece6da; padding: .45rem .65rem; }
+@media (max-width: 680px) { .buscador-notas { flex: 0 0 9rem; margin: 0; } }
 </style>

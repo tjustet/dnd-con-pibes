@@ -31,6 +31,8 @@ const mostrarSoloSugeridos = ref(false)
 // --- REGISTRO DE TRATOS (CARRITO DE COBRO) ---
 const mesaTratos = ref([])
 
+const totalTrato = computed(() => mesaTratos.value.reduce((total, linea) => total + linea.precio_unidad_cobre * linea.unidades, 0))
+
 const tiendasFiltradas = computed(() => {
   return tiendasUrbana.value.filter(t => 
     (t.nombre_personalizado || t.tipo).toLowerCase().includes(filtroTiendaStr.value.toLowerCase())
@@ -52,6 +54,8 @@ const inicializarComercio = async () => {
 const actualizarCalles = async () => {
   const ciudad = ciudadSeleccionadaId.value
   consultaTienda++
+  mesaTratos.value = []
+  filtroTiendaStr.value = ''
   tiendaFoco.value = null
   tiendasUrbana.value = []
   if (!ciudad) return
@@ -70,7 +74,7 @@ const inspeccionarComercio = async (tienda) => {
 
   // 1. Cargar Empleados vinculados
   if (tienda.empleados && tienda.empleados.length > 0) {
-    const { data } = await supabase.from('characters').select('*').in('id', tienda.empleados)
+    const { data } = await supabase.from('characters').select('id, nombre_pj, raza, nivel').in('id', tienda.empleados.map(e => e.id ?? e))
     if (consulta !== consultaTienda) return
     if (data) personalCargado.value = data
   }
@@ -126,7 +130,7 @@ const forzarRevelacionTotal = (estado) => {
 
 // --- CONTROL DE FACTURACIÓN (CARRITO) ---
 const empujarAlCarrito = (item) => {
-  if (item.stock_local <= 0) return alert("No queda stock disponible en estanterías.")
+  if (item.stock_local <= 0) return avisar("No queda stock disponible.", true)
   
   // Si ya está, sumamos cantidad
   const existente = mesaTratos.value.find(t => t.item_id === item.id && t.ref_item_sistema.tabla_origen === item.tabla_origen)
@@ -151,7 +155,7 @@ const removerDelCarrito = (idx) => {
 
 // --- CIERRE DE TRATO: PROCESAMIENTO MATEMÁTICO D&D 5E ---
 const venderYTransferir = async () => {
-  if (vendiendo.value || !mesaTratos.value.length) return
+  if (vendiendo.value || !tiendaFoco.value || !mesaTratos.value.length) return
   const lineas = mesaTratos.value.map(t => ({
     item_id: t.item_id, tabla: t.ref_item_sistema.tabla_origen, comprador: t.comprador_id,
     precio: t.precio_unidad_cobre, unidades: t.unidades
@@ -203,9 +207,9 @@ onMounted(() => { inicializarComercio() })
           </select>
         </div>
         <div class="buscador-caja-tienda">
-          <input type="text" v-model="filtroTiendaStr" placeholder="🔍 Filtrar comercios locales..." class="input-dm-comercio" />
+          <input type="text" v-model="filtroTiendaStr" placeholder="Buscar local…" class="input-dm-comercio" />
         </div>
-        <button class="btn-cerrar-tiendas" @click="emit('cerrar')">✖ CERRAR PANEL</button>
+        <button class="btn-cerrar-tiendas" @click="emit('cerrar')">Cerrar</button>
       </div>
 
       <div class="cuerpo-interactivo-comercial">
@@ -213,12 +217,12 @@ onMounted(() => { inicializarComercio() })
         <div class="lista-tiendas-calles">
           <h4 class="titulo-seccion-comercio">Establecimientos Abiertos</h4>
           <div class="scroll-tiendas-comercio">
-            <div v-if="tiendasFiltradas.length === 0" class="aviso-vacio">Calles desiertas o sin locales registrados.</div>
+            <div v-if="tiendasFiltradas.length === 0" class="aviso-vacio">{{ filtroTiendaStr ? 'Ningún local coincide.' : 'No hay locales en esta ciudad.' }}</div>
             <div 
               v-for="t in tiendasFiltradas" 
               :key="t.id" 
               :class="['tarjeta-tienda-dm-mesa', tiendaFoco?.id === t.id ? 'activo' : '']"
-              @click="inspeccionarComercio(t)"
+              role="button" tabindex="0" @keydown.enter.prevent="inspeccionarComercio(t)" @keydown.space.prevent="inspeccionarComercio(t)" @click="inspeccionarComercio(t)"
             >
               <div class="iconografia-comercio">🏪</div>
               <div class="info-comercio-card">
@@ -231,14 +235,14 @@ onMounted(() => { inicializarComercio() })
 
         <div class="interior-tienda-dm">
           <div v-if="!tiendaFoco" class="flex-center h-full text-muted">
-            <p class="font-cinzel">Selecciona una tienda del mapa urbano para auditar sus mostradores.</p>
+            <p class="font-cinzel">Elegí un local para ver su inventario.</p>
           </div>
           
           <div v-else class="layout-interior-tienda">
             <div class="header-comercio-activo flex-between">
               <div>
                 <h3>{{ tiendaFoco.nombre_personalizado || tiendaFoco.tipo }}</h3>
-                <p class="txt-gris txt-chico">Gobernado por el rubro: <strong>{{ tiendaFoco.tipo }}</strong></p>
+                <p class="txt-gris txt-chico">Rubro · <strong>{{ tiendaFoco.tipo }}</strong></p>
               </div>
               <button class="btn-proyectar" @click="proyectarAlTableroGeneral">📡 Proyectar Catálogo Revelado</button>
             </div>
@@ -289,7 +293,7 @@ onMounted(() => { inicializarComercio() })
                     v-show="!mostrarSoloSugeridos || item.revelado"
                     :class="['fila-articulo-dm-tienda', item.revelado ? 'revelado' : 'oculto']"
                   >
-                    <button class="btn-ojo-toggle" @click="item.revelado = !item.revelado">
+                    <button class="btn-ojo-toggle" :aria-label="`Revelar ${item.nombre}`" :aria-pressed="item.revelado" @click="item.revelado = !item.revelado">
                       {{ item.revelado ? '👁️' : '🔒' }}
                     </button>
                     <div class="flex-1 ml-1 overflow-hidden">
@@ -301,7 +305,7 @@ onMounted(() => { inicializarComercio() })
                     <div class="precio-cobre-tag text-oro monospace">
                       💰 {{ item.precio_cobre }}pc
                     </div>
-                    <button class="btn-agregar-negociacion" @click="empujarAlCarrito(item)" :disabled="item.stock_local <= 0">+</button>
+                    <button class="btn-agregar-negociacion" :aria-label="`Agregar ${item.nombre} al trato`" @click="empujarAlCarrito(item)" :disabled="item.stock_local <= 0">+</button>
                   </div>
                 </div>
               </div>
@@ -314,7 +318,7 @@ onMounted(() => { inicializarComercio() })
           <h4 class="titulo-seccion-comercio border-bottom pb-corto text-center">⚖️ Mesa de Negociación</h4>
           
           <div v-if="mesaTratos.length === 0" class="caja-carrito-vacía">
-            El DM no ha indexado ningún artículo para cobro inmediato. Haz clic en el "+" de las mercancías reveladas.
+            Usá el botón + junto a un objeto para agregarlo al trato.
           </div>
 
           <div class="scroll-facturacion" v-else>
@@ -347,8 +351,9 @@ onMounted(() => { inicializarComercio() })
             </div>
           </div>
 
+          <p v-if="mesaTratos.length" class="total-trato">Total del trato <strong>{{ totalTrato }} pc</strong></p>
           <button v-if="mesaTratos.length > 0" @click="venderYTransferir" :disabled="vendiendo" class="btn-cerrar-trato-dorado">
-            🤝 Cerrar Trato y Cobrar Fondos
+            {{ vendiendo ? 'Cobrando…' : 'Cerrar trato y cobrar' }}
           </button>
         </div>
 
@@ -479,4 +484,8 @@ onMounted(() => { inicializarComercio() })
   .entorno-comercial-dados { border: 0; padding: 0 0 12px; }
   .btn-agregar-negociacion { width: 36px; height: 36px; }
 }
+.total-trato { padding-block: .8rem; border-top: 1px solid #51402a; display: flex; justify-content: space-between; color: #ffe1a3; }
+.aviso-sin-personal, .aviso-vacio { color: #a5adba; }
+.btn-cerrar-tiendas { background: #19191e; border-color: #475569; }
+@media (max-width: 630px) { .buscador-caja-tienda { order: 3; flex-basis: 100%; } .buscador-caja-tienda input { width: 100%; } }
 </style>

@@ -2,7 +2,7 @@
 import { ref, computed, watch, onMounted } from 'vue'
 
 const props = defineProps({
-  campaignId: { type: String, required: true },
+  campaignId: { type: String, default: null },
   tiendaFijaId: { type: [String, Number], default: null },
   tiendaTipo: { type: String, default: '' },
   npcEditando: { type: Object, default: null }
@@ -335,7 +335,7 @@ const prepararOpcionesTrabajo = () => {
 }
 
 const cargarTiendas = async () => {
-  if (props.tiendaFijaId) return 
+  if (!props.campaignId || props.campaignId === 'nuevo' || props.tiendaFijaId) return
   const { data } = await supabase.from('tiendas_sesion').select('id, nombre_personalizado, tipo').eq('campaign_id', props.campaignId)
   if (data) tiendasDisponibles.value = data
 }
@@ -385,17 +385,17 @@ const guardandoNpc = ref(false)
 const { avisar } = useAvisos()
 const procesarYGuardar = async () => {
   if (guardandoNpc.value) return
-  if (!form.value.nombre) return alert("El NPC necesita un nombre.")
+  if (!form.value.nombre.trim()) return avisar("El NPC necesita un nombre.", true)
   
   // SOLUCIÓN: Validamos que la ID de la ruta no sea la palabra "nuevo" antes de mandarla a Supabase
-  const idCampanaValido = props.campaignId
+  const idCampanaValido = props.npcEditando ? props.npcEditando.campaign_id : (props.campaignId === 'nuevo' ? null : props.campaignId)
 
   guardandoNpc.value = true
   try {
     const npcFinal = {
       tipo: 'npc',
       campaign_id: idCampanaValido,
-      nombre_pj: form.value.nombre,
+      nombre_pj: form.value.nombre.trim(),
       raza: form.value.raza,
       clase: form.value.trabajo,
       nivel: form.value.nivel,
@@ -412,16 +412,16 @@ const procesarYGuardar = async () => {
       clase_armadura: form.value.clase_armadura,
       velocidad: parseInt(form.value.velocidad) || 30,
       notas: form.value.notas,
-      inventario: props.npcEditando ? props.npcEditando.inventario : []
+      ...(!props.npcEditando && { inventario: [] })
     }
 
     if (props.npcEditando) {
       const { data, error } = await supabase.from('characters').update(npcFinal).eq('id', props.npcEditando.id).select().single()
-      if (error) return alert("Error al editar: " + error.message)
+      if (error) return avisar("Error al editar: " + error.message, true)
       emit('guardar-npc', data)
     } else {
       const { data, error } = await supabase.from('characters').insert(npcFinal).select().single()
-      if (error) return alert("Error al guardar: " + error.message)
+      if (error) return avisar("Error al guardar: " + error.message, true)
 
       if (form.value.tiendaDestino && !props.tiendaFijaId) {
         const { data: local, error: errorLocal } = await supabase.from('tiendas_sesion').select('empleados')
@@ -480,11 +480,11 @@ onMounted(() => {
       
       <div class="generador-grid">
         <div class="col-form">
-          <label>Nombre del NPC</label>
-          <input type="text" v-model="form.nombre" class="input-form" placeholder="Ej: Kaelen Puñohierro" />
+          <label for="npc-nombre">Nombre del NPC</label>
+          <input type="text" id="npc-nombre" v-model="form.nombre" class="input-form" placeholder="Ej: Kaelen Puñohierro" />
 
-          <label>URL de Retrato / Imagen</label>
-          <input type="text" v-model="form.imagen_url" class="input-form" placeholder="https://link-de-la-imagen.png" />
+          <label for="npc-imagen_url">URL de Retrato / Imagen</label>
+          <input type="text" id="npc-imagen_url" v-model="form.imagen_url" class="input-form" placeholder="https://link-de-la-imagen.png" />
 
           <div class="input-group" v-if="!props.tiendaFijaId && !props.npcEditando">
             <label class="t-dorado">📍 Asignar a Establecimiento</label>
@@ -496,15 +496,15 @@ onMounted(() => {
 
           <div class="row-inputs">
             <div class="input-group">
-              <label>Trabajo / Clase</label>
-              <select v-model="form.trabajo" class="input-form" :disabled="!modoRapido && !props.npcEditando">
+              <label for="npc-trabajo">Trabajo / Clase</label>
+              <select id="npc-trabajo" v-model="form.trabajo" class="input-form" :disabled="!modoRapido && !props.npcEditando">
                 <option v-for="t in trabajosOrdenados" :key="t" :value="t">{{ t }}</option>
               </select>
             </div>
             
             <div class="input-group">
-              <label>Raza</label>
-              <select v-model="form.raza" class="input-form" :disabled="!modoRapido && !props.npcEditando">
+              <label for="npc-raza">Raza</label>
+              <select id="npc-raza" v-model="form.raza" class="input-form" :disabled="!modoRapido && !props.npcEditando">
                 <optgroup v-if="opcionesRaza.recomendadas.length > 0" label="🌟 Destacados en este oficio">
                   <option v-for="r in opcionesRaza.recomendadas" :key="r" :value="r">{{ r }}</option>
                 </optgroup>
@@ -525,7 +525,7 @@ onMounted(() => {
                   <span>🌟 Excepción</span>
                 </label>
               </div>
-              <input type="range" v-model.number="form.nivel" min="0" :max="nivelMaximo" class="slider-nivel" :disabled="!modoRapido && !props.npcEditando" />
+              <input type="range" aria-label="Nivel del NPC" v-model.number="form.nivel" min="0" :max="nivelMaximo" class="slider-nivel" :disabled="!modoRapido && !props.npcEditando" />
               <div class="txt-nivel">
                 Nivel: <strong>{{ form.nivel }}</strong> 
                 <span class="txt-gris txt-chico" v-if="excepcionLimiteNivel">(Sin límite racial)</span>
@@ -533,8 +533,8 @@ onMounted(() => {
               </div>
             </div>
             <div class="input-group">
-              <label>Alineamiento</label>
-              <select v-model="form.alineamiento" class="input-form">
+              <label for="npc-alineamiento">Alineamiento</label>
+              <select id="npc-alineamiento" v-model="form.alineamiento" class="input-form">
                 <option v-for="a in alineamientos" :key="a" :value="a">{{ a }}</option>
               </select>
             </div>

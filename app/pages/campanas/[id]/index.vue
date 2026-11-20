@@ -30,7 +30,7 @@ const cargarDatosCampana = async () => {
   errorCarga.value = false
   cargando.value = true
   try {
-    const { data: campanaData } = await supabase.from('campaigns').select('*').eq('id', route.params.id).single()
+    const { data: campanaData } = await supabase.from('campaigns').select('id, nombre_campanya, imagen_url').eq('id', route.params.id).single()
     if (!campanaData) throw new Error('Campaña no disponible')
     campana.value = campanaData
 
@@ -81,6 +81,7 @@ onMounted(() => {
     <div v-else class="contenedor-principal">
       
       <div class="header-campana">
+        <img v-if="campana.imagen_url" class="portada" :src="campana.imagen_url" alt="" />
         <div class="header-izq">
           <button @click="router.push('/dashboard')" class="btn-regresar" aria-label="Volver al tablero" title="Volver al tablero">←</button>
           <h1 class="titulo-campana">{{ campana.nombre_campanya || campana.nombre }}</h1>
@@ -88,13 +89,13 @@ onMounted(() => {
         
         <div class="header-centro">
           <button @click="router.push(`/campanas/${route.params.id}/dm`)" class="btn-dm-acceso">
-            👁️ Entrar a la Mesa (DM)
+            Entrar a la mesa del DM
           </button>
           <button @click="router.push(`/campanas/${route.params.id}/notas`)" class="btn-control">
-            📝 Notas del DM
+            Grimorio
           </button>
           <button @click="router.push(`/campanas/${route.params.id}/lugares`)" class="btn-herramienta">
-            Ciudades
+            Atlas de ciudades
           </button>
         </div>
 
@@ -108,7 +109,7 @@ onMounted(() => {
             </div>
           </details>
           <button @click="nuevaUrlImagen = campana.imagen_url || ''; editandoImagen = true" class="btn-herramienta" title="Cambiar Portada">🖼️</button>
-          <button @click="borrarCampana" class="btn-borrar-campana" title="Destruir Campaña">Eliminar Campaña</button>
+
         </div>
       </div>
 
@@ -116,7 +117,7 @@ onMounted(() => {
       <div class="grilla-personajes">
         <div v-for="pj in listaPersonajes" :key="pj.id" class="tarjeta-pj">
           <div class="avatar-zona">
-            <img v-if="pj.imagen_url" :src="pj.imagen_url" class="img-avatar" />
+            <img v-if="pj.imagen_url" :src="pj.imagen_url" class="img-avatar" alt="" loading="lazy" />
             <div v-else class="img-fallback">🛡️</div>
           </div>
           <div class="info-zona">
@@ -127,7 +128,7 @@ onMounted(() => {
               <span class="badge-stat font-mono">Nvl {{ pj.nivel || 1 }}</span>
             </div>
             <div class="pj-mail">
-              <i class="fa-regular fa-envelopeIcon"></i> {{ pj.player_email || 'Sin jugador vinculado' }}
+              {{ pj.player_email || 'Sin jugador vinculado' }}
             </div>
           </div>
           <div class="accion-zona">
@@ -149,13 +150,13 @@ onMounted(() => {
         <div class="bloque-entidades">
           <h2 class="subtitulo-seccion texto-verde">NPCs de la Campaña</h2>
           <div class="lista-mini">
-            <div v-for="npc in listaNpcs" :key="npc.id" class="tarjeta-mini-entidad borde-verde" @click="router.push(`/personajes/${npc.id}`)">
-              <div class="mini-avatar npc-bg"><span v-if="!npc.imagen_url">👤</span><img v-else :src="npc.imagen_url" /></div>
+            <NuxtLink v-for="npc in listaNpcs" :key="npc.id" class="tarjeta-mini-entidad borde-verde" :to="`/personajes/${npc.id}`">
+              <div class="mini-avatar npc-bg"><span v-if="!npc.imagen_url">👤</span><img v-else :src="npc.imagen_url" loading="lazy" alt="" /></div>
               <div class="mini-info">
                 <h4>{{ npc.nombre_pj || 'NPC Desconocido' }}</h4>
                 <span>Abrir Ficha</span>
               </div>
-            </div>
+            </NuxtLink>
             <p v-if="listaNpcs.length === 0" class="texto-vacio-mini">Sin NPCs forjados.</p>
           </div>
         </div>
@@ -163,19 +164,22 @@ onMounted(() => {
         <div class="bloque-entidades">
           <h2 class="subtitulo-seccion texto-rojo">Enemigos / Monstruos</h2>
           <div class="lista-mini">
-            <div v-for="en in listaEnemigos" :key="en.id" class="tarjeta-mini-entidad borde-rojo" @click="router.push(`/personajes/${en.id}`)">
-              <div class="mini-avatar en-bg"><span v-if="!en.imagen_url">💀</span><img v-else :src="en.imagen_url" /></div>
+            <NuxtLink v-for="en in listaEnemigos" :key="en.id" class="tarjeta-mini-entidad borde-rojo" :to="`/personajes/${en.id}`">
+              <div class="mini-avatar en-bg"><span v-if="!en.imagen_url">💀</span><img v-else :src="en.imagen_url" loading="lazy" alt="" /></div>
               <div class="mini-info">
                 <h4>{{ en.nombre_pj || 'Monstruo Desconocido' }}</h4>
                 <span>CR: {{ en.dificultad || '-' }}</span>
               </div>
-            </div>
+            </NuxtLink>
             <p v-if="listaEnemigos.length === 0" class="texto-vacio-mini">Sin amenazas forjadas.</p>
           </div>
         </div>
 
       </div>
-
+      <details class="ajustes">
+        <summary>Administrar campaña</summary>
+        <button @click="borrarCampana" class="btn-borrar-campana">Eliminar campaña</button>
+      </details>
     </div>
   </div>
 
@@ -331,4 +335,17 @@ onMounted(() => {
   .tarjeta-pj > :last-child { grid-column: 1/-1; }
   .tarjeta-pj .btn-abrir-ficha { width: 100%; }
 }
+.header-campana { position: relative; isolation: isolate; align-content: end; justify-content: flex-start; min-height: 185px; padding: clamp(1rem,3vw,2rem); background: linear-gradient(115deg,#2c2219,#151419 70%); border: 1px solid #494034; }
+.portada { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; z-index: -2; border-radius: inherit; }
+.header-campana:has(.portada)::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; background: linear-gradient(90deg,#080808ee,#080808a8); }
+.header-izq { width: 100%; }
+.titulo-campana { color: #ffde99; margin: 0; overflow-wrap: anywhere; }
+.header-centro { padding: 0; flex-wrap: wrap; }
+.btn-dm-acceso { background: #e2b362; color: #24190c; border-color: #ecc888; }
+.btn-dm-acceso:hover { background: #f6cf8a; color: #22180b; box-shadow: none; transform: none; }
+.pj-mail, .texto-vacio, .texto-vacio-mini { color: #a4adbd; }
+.ajustes { margin: 2rem 0 1rem; padding: .8rem 0; border-top: 1px solid #27272a; }
+.ajustes summary { cursor: pointer; color: #b7beca; padding: .5rem 0; }
+.tarjeta-mini-entidad { text-decoration: none; }
+@media (max-width: 550px) { .accion-zona { border: 0; padding: 0; margin: 0; height: auto; } }
 </style>

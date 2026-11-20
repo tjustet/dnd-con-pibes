@@ -83,7 +83,7 @@ const cargarPerfilFuerte = async () => {
 
     // 2. Buscamos TU fila exacta por email y la pedimos como objeto único (.single())
     const { data, error } = await supabase.from('profiles')
-      .select('id, nombre, is_dm')
+      .select('id, email, nombre, is_dm')
       .eq('email', userEmail)
       .single() 
     
@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
 
     <div class="contenedor-principal">
       <nav class="navbar panel-glass">
-        <h1 class="titulo-epico">D&D Manager</h1>
+        <h1 class="titulo-epico">La Taberna del DM</h1>
         <div class="usuario-menu">
           <button :disabled="!musicaLista" aria-label="Música de la taberna" :aria-pressed="musicaSonando" @click="toggleMusica" class="btn-musica" :title="musicaSonando ? 'Silenciar Taberna' : 'Escuchar Taberna'">
             {{ musicaSonando ? '🔊' : '🔇' }}
@@ -158,19 +158,19 @@ onBeforeUnmount(() => {
           
           <span v-if="perfil" class="saludo">Saludos, <strong class="texto-dorado">{{ perfil.nombre }}</strong></span>
           <NuxtLink class="enlace-versiones" to="/versiones">Versiones</NuxtLink>
-          <button @click="cerrarSesion" class="btn-salir">Abandonar Taberna</button>
+          <button @click="cerrarSesion" class="btn-salir">Cerrar sesión</button>
         </div>
       </nav>
 
       <ClientOnly fallback-tag="div" fallback="Invocando la taberna...">
         
-        <div v-if="cargando" class="cargando">Consultando los pergaminos de la creación...</div>
+        <div v-if="cargando" class="cargando">Cargando tablero…</div>
 
         <div v-else-if="errorCarga" class="estado-partida" role="alert">{{ errorCarga }} <button @click="cargarPerfilFuerte">Reintentar</button></div>
         <div v-else-if="perfil?.is_dm === true || perfil?.is_dm === 'true'" class="panel-principal panel-glass dm-borde">
           <div class="header-panel">
-            <h2 class="subtitulo-seccion dm-color">Mis Campañas (Dungeon Master)</h2>
-            <button @click="creandoCampaña = true" class="btn-accion-dm">+ Forjar Nueva Campaña</button>
+            <h2 class="subtitulo-seccion dm-color">Mis campañas</h2>
+            <button @click="creandoCampaña = true" class="btn-accion-dm">+ Nueva campaña</button>
           </div>
 
           <div v-if="misCampañas.length > 0" class="grilla">
@@ -183,29 +183,31 @@ onBeforeUnmount(() => {
               
               <div class="info-campana">
                 <h3 class="texto-dm">{{ campana.nombre_campanya }}</h3>
-                <p class="detalle-campana">Mundo Activo</p>
-                <NuxtLink :to="`/campanas/${campana.id}`" class="btn-link-dm">Entrar al Mundo</NuxtLink>
+
+                <NuxtLink :to="`/campanas/${campana.id}`" class="btn-link-dm">Abrir campaña</NuxtLink>
               </div>
             </div>
           </div>
           <div v-else class="vacio">No has forjado ningún mundo todavía. Crea tu primera campaña.</div>
 
           <div v-if="creandoCampaña" class="modal-overlay">
-            <div class="modal-card panel-glass">
+            <form class="modal-card panel-glass" aria-label="Nueva campaña" @submit.prevent="crearCampaña" @keydown.esc="creandoCampaña = false">
               <h3 class="texto-dm">Nueva Campaña</h3>
               
-              <input v-model="nombreNuevaCampaña" placeholder="Nombre de tu mundo..." class="input-magico mb-corto" />
-              <input v-model="imagenNuevaCampaña" placeholder="URL de la imagen (Opcional)..." class="input-magico" />
+              <label for="nombre-campana">Nombre de la campaña</label>
+              <input id="nombre-campana" required v-model="nombreNuevaCampaña" placeholder="Nombre de tu mundo..." class="input-magico mb-corto" />
+              <label for="portada-campana">Portada (opcional)</label>
+              <input id="portada-campana" v-model="imagenNuevaCampaña" placeholder="URL de la imagen (Opcional)..." class="input-magico" />
               
               <div v-if="imagenNuevaCampaña" class="preview-imagen">
                 <img :src="imagenNuevaCampaña" alt="Preview" />
               </div>
 
               <div class="acciones">
-                <button @click="creandoCampaña = false" class="btn-cancelar">Cancelar</button>
-                <button :disabled="guardando || !nombreNuevaCampaña.trim()" @click="crearCampaña" class="btn-accion-dm">Crear Mundo</button>
+                <button type="button" @click="creandoCampaña = false" class="btn-cancelar">Cancelar</button>
+                <button :disabled="guardando || !nombreNuevaCampaña.trim()" type="submit" class="btn-accion-dm">Crear campaña</button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
 
@@ -345,4 +347,12 @@ onBeforeUnmount(() => {
   .modal-overlay { padding: 12px; }
   .grilla { gap: 12px; }
 }
+.panel-glass { background: #111115ee; border-color: #38342f; box-shadow: 0 14px 36px #0006; }
+.dm-borde { border-top: 3px solid #ba8d44; }
+.dm-color, .texto-dm { color: #ebcd95; }
+.btn-accion-dm, .btn-link-dm { background: #503718; border: 1px solid #a77c40; color: #ffdf9e; }
+.btn-accion-dm:hover, .btn-link-dm:hover { background: #694a22; }
+.tarjeta-campana { border-color: #363431; }
+.modal-card label { display: block; margin: .55rem 0 .3rem; color: #dfd3bd; }
+@media (max-width: 600px) { .pantalla-taberna { background-attachment: scroll; } .usuario-menu { gap: .6rem; } }
 </style>

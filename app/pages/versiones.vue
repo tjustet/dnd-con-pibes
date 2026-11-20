@@ -3,6 +3,15 @@ useHead({ title: 'Historial de versiones' })
 const usuario = useSupabaseUser()
 const versiones = [
   {
+    numero: '0.2.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
+    titulo: 'La taberna y sus mercados',
+    cambios: [
+      'La campaña muestra su portada y reúne los accesos a la mesa, el atlas y el grimorio.',
+      'Buscá ciudades por nombre y pergaminos por título.',
+      'La caja muestra el total negociado en cobre. La forja crea el objeto y lo suma al stock en una sola operación.'
+    ]
+  },
+  {
     numero: '0.1.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
     titulo: 'Cuaderno del director',
     cambios: [
@@ -37,6 +46,7 @@ h1, h2 { font-family: Cinzel, Georgia, serif; color: #fde68a; }
 h1 { margin: 2rem 0 1rem; font-size: clamp(1.85rem, 6vw, 3rem); }
 h2 { margin: .75rem 0; font-size: 1.5rem; }
 article { padding: clamp(1rem, 4vw, 2rem); border: 1px solid #334155; border-radius: .75rem; background: #111115; }
+article + article { margin-top: 1rem; }
 header { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem 1rem; }
 strong { color: #facc15; }
 time { font-size: .88rem; color: #a1a1aa; }

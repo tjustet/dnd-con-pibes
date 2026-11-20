@@ -3,7 +3,7 @@ definePageMeta({ middleware: 'director' })
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 // IMPORTACIONES EXPRESAS DE COMPONENTES
-import GestorTiendasDM from '../../../components/dm/GestorTiendasDM.vue' // IMPORTACIÓN CONFIRMADA
+import GestorTiendasDM from '../../../components/dm/GestorTiendasDM.vue'
 import DmTrackerIniciativa from '../../../components/dm/DmTrackerIniciativa.vue'
 import DmMesaDados from '../../../components/dm/DmMesaDados.vue'
 import DmDrawerDetalles from '../../../components/dm/DmDrawerDetalles.vue'
@@ -384,21 +384,21 @@ onMounted(() => { cargarMesaDM() })
       
       <div class="panel-superior">
         <div class="header-izq">
-          <button @click="router.push(`/campanas/${route.params.id}`)" class="btn-ghost">← Salir</button>
+          <button @click="router.push(`/campanas/${route.params.id}`)" class="btn-ghost">← Campaña</button>
           <h1 class="titulo-dm">Mesa del DM: <span class="campana-name">{{ campana.nombre_campanya || campana.nombre }}</span></h1>
           <div class="toggle-oculto">
             <span class="lbl-oculto">Ocultar Dados</span>
-            <label class="switch"><input type="checkbox" v-model="dadosOcultos"><span class="slider round"></span></label>
+            <label class="switch"><input type="checkbox" aria-label="Ocultar dados" v-model="dadosOcultos"><span class="slider round"></span></label>
           </div>
           <div v-if="estadoMesa.entidadVisible" class="indicador-vision">
             <span>👁️ Mostrando: <strong>{{ estadoMesa.entidadVisible.nombre }}</strong></span>
             <button @click="limpiarVisionJugadores">✖ Ocultar</button>
           </div>
         </div>
-        <div class="botones-dm-acciones">
+        <div class="botones-dm-acciones" role="group" aria-label="Acciones de la sesión">
           <button @click="modalVisionAbierto = true" class="btn-ghost">👁️ Proyectar Imagen</button>
-          <button v-if="!combateActivo" @click="prepararIniciativa" class="btn-accion-dm dorado">⚔️ INICIATIVA</button>
-          <button v-else @click="terminarCombate" class="btn-accion-dm rojo">🛑 Fin Combate</button>
+          <button v-if="!combateActivo" @click="prepararIniciativa" class="btn-accion-dm dorado">⚔️ Iniciativa</button>
+          <button v-else @click="terminarCombate" class="btn-accion-dm rojo">Finalizar combate</button>
           <button class="btn-control tienda" @click="modalTiendasAbierto = true">🏰 Ciudad</button>
           <button @click="modalAgregarJugadorAbierto = true" class="btn-accion-dm azul">+ Añadir PJ</button>
           <button @click="modalAgregarNpcAbierto = true" class="btn-accion-dm verde">+ Añadir NPC</button>
