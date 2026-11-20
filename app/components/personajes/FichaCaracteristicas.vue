@@ -14,12 +14,11 @@ const caracteristicas = [
   { id: 'carisma', nombre: 'CARISMA', habilidades: [{ id: 'prof_carisma_salv', nombre: 'Salvación' }, { id: 'prof_engano', nombre: 'Engaño' }, { id: 'prof_intimidacion', nombre: 'Intimidación' }, { id: 'prof_interpretacion', nombre: 'Interpretación' }, { id: 'prof_persuasion', nombre: 'Persuasión' }] }
 ]
 
-const calcMod = (valor) => Math.floor((valor - 10) / 2)
-const calcModStr = (valor) => { const m = calcMod(valor); return m >= 0 ? `+${m}` : m }
-const calcHabilidadNum = (statBase, isProf) => calcMod(props.pj[statBase]) + (isProf ? 2 + Math.floor((Math.max(1, Math.min(20, Number(props.pj.nivel) || 1)) - 1) / 4) : 0)
+const calcModStr = (valor) => { const m = modificadorCaracteristica(valor); return m >= 0 ? `+${m}` : m }
+const calcHabilidadNum = (statBase, isProf) => modificadorCaracteristica(props.pj[statBase]) + (isProf ? 2 + Math.floor((Math.max(1, Math.min(20, Number(props.pj.nivel) || 1)) - 1) / 4) : 0)
 const calcHabilidadStr = (statBase, isProf) => { const total = calcHabilidadNum(statBase, isProf); return total >= 0 ? `+${total}` : total }
 
-const tirarStat = (nombre, statBase) => emit('lanzarDado', { titulo: `Prueba de ${nombre}`, cant: 1, caras: 20, bono: calcMod(props.pj[statBase]) })
+const tirarStat = (nombre, statBase) => emit('lanzarDado', { titulo: `Prueba de ${nombre}`, cant: 1, caras: 20, bono: modificadorCaracteristica(props.pj[statBase]) })
 const tirarHab = (nombre, statBase, isProf) => emit('lanzarDado', { titulo: nombre, cant: 1, caras: 20, bono: calcHabilidadNum(statBase, isProf) })
 </script>
 

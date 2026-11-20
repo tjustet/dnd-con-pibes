@@ -88,17 +88,14 @@ const modalIniciativaAbierto = ref(false)
 const dadosOcultos = ref(false)
 const dmPool = ref([])
 const dmBono = ref(0)
-const dmTirando = ref(false)
-const dmDadosEnMesa = ref([])
-const dmResultadoFinal = ref(0)
+const { tirada: tiradaDm, tirando: dmTirando, lanzar: lanzarDadosDm } = useTiradaAnimada()
 
 const combateActivo = ref(false)
 const ordenIniciativa = ref([])
 const turnoActual = ref(0)
 const seleccionIniciativa = ref([])
 
-const calcMod = (val) => Math.floor((val - 10) / 2)
-const calcModStr = (val) => { const m = calcMod(val); return m >= 0 ? `+${m}` : `${m}` }
+const calcModStr = (val) => { const m = modificadorCaracteristica(val); return m >= 0 ? `+${m}` : `${m}` }
 
 // ------------------------------------------
 // PERSISTENCIA DE MESA Y DADOS
@@ -122,46 +119,29 @@ function guardarMesaDb() {
 // LÓGICA DE DADOS
 // ------------------------------------------
 const agregarDadoDm = (caras) => dmPool.value.push(caras)
-const limpiarPoolDm = () => { dmPool.value = []; dmBono.value = 0; dmDadosEnMesa.value = []; dmResultadoFinal.value = 0 }
+const limpiarPoolDm = () => { dmPool.value = []; dmBono.value = 0; tiradaDm.value = null }
 
 const quitarDadoDm = (caras) => {
   const indice = dmPool.value.lastIndexOf(caras)
   if (!dmTirando.value && indice >= 0) dmPool.value.splice(indice, 1)
 }
 
-const tirarPoolDm = (tituloPerso = null) => {
-  if (dmTirando.value || !dmPool.value.length) return
-  dmTirando.value = true
-  dmResultadoFinal.value = 0
-  const arrayDeCaras = [...dmPool.value]
+const tirarPoolDm = async (titulo = 'Tirada del DM', pool = dmPool.value, bono = dmBono.value) => {
   const oculto = dadosOcultos.value
-  const bonoNum = parseInt(dmBono.value) || 0
+  const t = await lanzarDadosDm(pool, bono, titulo)
+  if (!t) return
+  const registro = {
+    id: t.id, tirador: 'DM', titulo: t.titulo, dadosStr: t.dados.map(d => `d${d.caras}[${d.valor}]`).join(', '),
+    bono: t.bono, total: t.total, oculto, targetAsignado: '', mostrarAsignador: false
+  }
+  historialCompartido.value = [registro, ...historialCompartido.value].slice(0, 30)
+  try { await anotarTirada(supabase, campaignId, registro) }
+  catch (e) { avisar(e.message, true) }
+}
 
-  const intervalo = setInterval(() => { dmDadosEnMesa.value = arrayDeCaras.map(c => ({ caras: c, valor: Math.floor(Math.random() * c) + 1 })) }, 100)
-
-  setTimeout(() => {
-    clearInterval(intervalo)
-    let suma = 0
-    dmDadosEnMesa.value = arrayDeCaras.map(c => { const v = Math.floor(Math.random() * c) + 1; suma += v; return { caras: c, valor: v } })
-    dmResultadoFinal.value = suma + bonoNum
-    dmTirando.value = false
-
-    const nuevaTirada = {
-      id: idOperacion(),
-      tirador: 'DM',
-      titulo: tituloPerso || 'Tirada del DM',
-      dadosStr: dmDadosEnMesa.value.map(d => `d${d.caras}[${d.valor}]`).join(', '),
-      bono: bonoNum,
-      total: dmResultadoFinal.value,
-      oculto,
-      targetAsignado: '',
-      mostrarAsignador: false
-    }
-
-    const nuevoHist = [nuevaTirada, ...historialCompartido.value].slice(0, 30)
-    historialCompartido.value = nuevoHist
-    anotarTirada(supabase, campaignId, nuevaTirada).catch(e => avisar(e.message, true))
-  }, 1200)
+const repetirTiradaDm = () => {
+  const t = tiradaDm.value
+  if (t) tirarPoolDm(t.titulo, t.dados.map(d => d.caras), t.bono)
 }
 
 const tirarDesdeDrawer = (titulo, caras, bono) => {
@@ -175,7 +155,7 @@ const tirarDesdeDrawer = (titulo, caras, bono) => {
 
 const tirarAtaque = (atk) => tirarDesdeDrawer(`Ataca con ${atk.nombre}`, 20, atk.bono)
 const tirarDano = (atk) => { const dados = Array(Math.max(1, Math.min(100, parseInt(atk.cant_dados) || 1))).fill(Number(atk.tipo_dado) || 6); tirarDesdeDrawer(`Daño de ${atk.nombre}`, dados, atk.bono_dano) }
-const tirarStat = (nombre, valor) => tirarDesdeDrawer(`Chequeo de ${nombre}`, 20, calcMod(valor))
+const tirarStat = (nombre, valor) => tirarDesdeDrawer(`Chequeo de ${nombre}`, 20, modificadorCaracteristica(valor))
 
 // ------------------------------------------
 // DAÑO Y CURACIÓN
@@ -292,7 +272,7 @@ const lanzarIniciativaGlobal = () => {
   const combatientes = todasLasEntidadesActivas.value.filter(e => seleccionIniciativa.value.includes(e.instance_id || e.id))
   if (!combatientes.length) return avisar('Seleccioná al menos un combatiente.')
   ordenIniciativa.value = combatientes.map(c => {
-    const d20 = Math.floor(Math.random() * 20) + 1; const modDex = calcMod(c.destreza)
+    const d20 = Math.floor(Math.random() * 20) + 1; const modDex = modificadorCaracteristica(c.destreza)
     return { unique_id: c.instance_id || c.id, nombre: c.nombre_pj, imagen: c.imagen_url, total: d20 + modDex, hp_actual: c.hp_actual, hp_max: c.hp_max }
   }).sort((a, b) => b.total - a.total)
   turnoActual.value = 0; combateActivo.value = true; modalIniciativaAbierto.value = false
@@ -472,9 +452,8 @@ onMounted(() => { cargarMesaDM() })
           <DmMesaDados 
             :historialCompartido="historialCompartido"
             :todasLasEntidadesActivas="todasLasEntidadesActivas"
-            :dmDadosEnMesa="dmDadosEnMesa"
+            :tirada="tiradaDm"
             :dmTirando="dmTirando"
-            :dmResultadoFinal="dmResultadoFinal"
             :dmPool="dmPool"
             v-model:dmBono="dmBono"
             @limpiar-historial="limpiarHistorialGlobal"
@@ -484,7 +463,8 @@ onMounted(() => { cargarMesaDM() })
             @agregar-dado="agregarDadoDm"
             @quitar-dado="quitarDadoDm"
             @limpiar-pool="limpiarPoolDm"
-            @tirar-pool="tirarPoolDm"
+            @tirar-pool="tirarPoolDm()"
+            @repetir="repetirTiradaDm"
           />
 
           <div class="columna-pjs">

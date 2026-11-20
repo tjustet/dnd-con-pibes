@@ -1,3 +1,9 @@
+export function modificadorCaracteristica(valor) {
+  if (valor == null || String(valor).trim() === '') return 0
+  const puntuacion = Number(valor)
+  return Number.isFinite(puntuacion) ? Math.floor((puntuacion - 10) / 2) : 0
+}
+
 export function listaGuardada(valor) {
   if (Array.isArray(valor)) return valor
   if (typeof valor === 'string') {

@@ -3,6 +3,16 @@ useHead({ title: 'Historial de versiones' })
 const usuario = useSupabaseUser()
 const versiones = [
   {
+    numero: '0.4.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
+    titulo: 'Dados tallados',
+    cambios: [
+      'Los dados ruedan y se asientan sobre un tapete compartido por la mesa del DM y las fichas.',
+      'El d100 muestra decenas y unidades. Los resultados naturales de 1 y 20 se destacan en el d20.',
+      'Repetí la última tirada con los mismos dados y bono, incluso desde una prueba de característica.',
+      'El orden de iniciativa indica quién juega ahora y quién sigue.'
+    ]
+  },
+  {
     numero: '0.3.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
     titulo: 'Dados y aliados',
     cambios: [
