@@ -28,7 +28,13 @@ onMounted(() => {
   }
 })
 
+const ingresando = ref(false)
+const errorLogin = ref('')
 const loginConGoogle = async () => {
+  if (ingresando.value) return
+  ingresando.value = true
+  errorLogin.value = ''
+  try {
   const { error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -37,7 +43,11 @@ const loginConGoogle = async () => {
   })
 
   if (error) {
-    console.error('Pifia crítica en el login:', error.message)
+    throw error
+  }
+  } catch {
+    errorLogin.value = 'No se pudo iniciar sesión con Google. Volvé a intentarlo.'
+    ingresando.value = false
   }
 }
 </script>
@@ -67,13 +77,14 @@ const loginConGoogle = async () => {
     <div class="tarjeta-grimorio">
       <div class="brillo-superior"></div>
       <h1 class="titulo-epico">La Taberna<br>del DM</h1>
-      <p class="subtitulo">Abre el portal con tu verdadera identidad</p>
+      <p class="subtitulo">Tus campañas, personajes y mesas de juego.</p>
       
-      <button @click="loginConGoogle" class="btn-portal">
+      <p v-if="errorLogin" role="alert">{{ errorLogin }}</p>
+      <button :disabled="ingresando" @click="loginConGoogle" class="btn-portal">
         <svg class="icono" viewBox="0 0 24 24">
           <path fill="currentColor" d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
         </svg>
-        Cruzar el Umbral con Google
+        {{ ingresando ? 'Abriendo Google…' : 'Entrar con Google' }}
       </button>
     </div>
   </div>
@@ -114,4 +125,12 @@ const loginConGoogle = async () => {
 .btn-portal:hover { background: linear-gradient(135deg, #3b0764, #2e1065); border-color: #7e22ce; color: #ffffff; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(88, 28, 135, 0.9); }
 .btn-portal:active { transform: translateY(1px); }
 .icono { width: 1.5rem; height: 1.5rem; }
+
+.subtitulo { color: #bac3d1; }
+.tarjeta-grimorio [role=alert] { color: #fca5a5; margin: 10px 0; }
+@media (max-width: 600px) {
+  .pantalla-magica { min-height: 100svh; padding: 20px; }
+  .tarjeta-grimorio { width: 100%; padding: 2rem 1.25rem; }
+  .titulo-epico { font-size: clamp(2rem,10vw,2.8rem); }
+}
 </style>
