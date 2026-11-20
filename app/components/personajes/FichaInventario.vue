@@ -6,11 +6,14 @@ const filtroInventario = ref('')
 const inventarioFiltrado = computed(() => {
   if (!filtroInventario.value) return props.pj.inventario
   const f = filtroInventario.value.toLowerCase()
-  return props.pj.inventario.filter(i => i.nombre.toLowerCase().includes(f) || i.nota.toLowerCase().includes(f))
+  return props.pj.inventario.filter(i => (i.nombre || '').toLowerCase().includes(f) || (i.nota || '').toLowerCase().includes(f))
 })
 
 const agregarItem = () => props.pj.inventario.push({ nombre: '', cant: 1, peso: '', nota: '', equipado: false })
-const borrarItem = (index) => props.pj.inventario.splice(index, 1)
+const borrarItem = (item) => {
+  const index = props.pj.inventario.indexOf(item)
+  if (index >= 0) props.pj.inventario.splice(index, 1)
+}
 </script>
 
 <template>
@@ -30,7 +33,7 @@ const borrarItem = (index) => props.pj.inventario.splice(index, 1)
         </div>
         <div class="lista-inventario">
           <div v-for="(item, idx) in inventarioFiltrado" :key="idx" class="item-inv relativo" :class="{'equipado': item.equipado}">
-            <button v-if="modoEdicion" @click="borrarItem(idx)" class="btn-borrar-absoluto">Borrar</button>
+            <button v-if="modoEdicion" @click="borrarItem(item)" class="btn-borrar-absoluto">Borrar</button>
             <div class="inv-fila-nom pr-borrar">
               <div class="inv-box flex-grow"><label>NOMBRE</label><input v-if="modoEdicion" v-model="item.nombre"/><span v-else class="texto-bold">{{ item.nombre || '-' }}</span></div>
               <div class="check-equipado"><input type="checkbox" v-model="item.equipado" :disabled="!modoEdicion" /><label>Equip.</label></div>

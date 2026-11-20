@@ -1,0 +1,124 @@
+:root {
+  color-scheme: dark;
+  font-family: 'Inter', system-ui, sans-serif;
+  background: #070709;
+  color: #e2e8f0;
+  --borde: #334155;
+  --ambar: #facc15;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+img { max-width: 100%; }
+button, input, select, textarea { font-family: inherit; }
+button:disabled { opacity: .55; cursor: not-allowed; }
+:where(button, a, summary, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #60a5fa; outline-offset: 2px;
+}
+:where(h1,h2,h3,h4,p,label,button) { overflow-wrap: break-word; }
+.aviso-partida, .estado-partida, .pedidos-mesa {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  background: #111115; border: 1px solid var(--borde); border-radius: 8px; color: #e2e8f0;
+}
+.aviso-partida {
+  position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%;
+  transform: translateX(-50%); z-index: 1000001; max-width: min(34rem, calc(100vw - 24px));
+  width: max-content; border-color: #b45309; box-shadow: 0 8px 32px #000a;
+}
+.aviso-partida.error { border-color: #ef4444; }
+.estado-partida { position: relative; justify-content: center; flex-wrap: wrap; margin: 2rem auto; width: fit-content; }
+.estado-partida :is(button,a), .pedidos-mesa button { color: var(--ambar); border: 1px solid var(--borde); border-radius: 6px; padding: .45rem .75rem; }
+.pedidos-mesa, .pedidos-mesa article { flex-wrap: wrap; }
+.pedidos-mesa article { display: flex; align-items: center; gap: .5rem; }
+.pantalla-ficha .layout-maestro > *, .grilla-detalles > *, .cuerpo-tablero > *, .fila-inferior-dm > *,
+.datos-identidad, .card-info, .seccion-inventario-wrap, .contenedor-filtro { min-width: 0; }
+.mesa-mitad-der { min-width: 0; }
+.modal-taberna, .modal-dm-sheet { max-height: calc(100dvh - 2rem); overflow-y: auto; overscroll-behavior: contain; }
+.fila-acciones-mesa { flex-wrap: wrap; gap: 8px; }
+.pool-viewer { max-height: 72px; overflow-y: auto; }
+.indice-ficha { display: none; }
+@media (max-width: 1250px) {
+  .cuerpo-tablero { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .centro-dados-dm { grid-column: 1 / -1; grid-row: 1; }
+  .columna-pjs { min-height: 0; }
+  .grilla-detalles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grilla-detalles > :last-child { grid-column: 1 / -1; }
+  .grilla-estadisticas { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .panel-superior, .acciones-derecha, .controles-superiores, .panel-identidad { flex-wrap: wrap; gap: 12px; }
+}
+@media (max-width: 800px) {
+  .mesa-dm-pantalla, .mesa-dm-pantalla.drawer-open { padding: 10px; }
+  .panel-superior, .header-izq, .botones-dm-acciones { gap: 8px; }
+  .botones-dm-acciones { width: 100%; display: grid; grid-template-columns: repeat(auto-fit,minmax(126px,1fr)); }
+  .cuerpo-tablero, .tablero-grid, .fila-inferior-dm { gap: 12px; }
+  .fila-inferior-dm, .grilla-detalles { grid-template-columns: minmax(0, 1fr); }
+  .mesa-mitad-izq { width: 36%; }
+  .barra-iniciativa { flex-wrap: wrap; }
+  .tracker-scroll { min-width: 0; }
+  .pantalla-ficha .contenedor-principal { padding: 12px; width: 100%; }
+  .pantalla-ficha { padding-bottom: 5rem; }
+  .indice-ficha { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+  .indice-ficha a { border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; color: #cbd5e1; }
+  .grilla-detalles > *, .grilla-estadisticas { scroll-margin-top: 12px; }
+  .bloque-vitalidad { padding: 10px 0 0; border-left: 0; border-top: 1px solid #27272a; width: 100%; flex-wrap: wrap; }
+  .tags-basicos, .header-seccion-busqueda, .modal-botones-taberna { flex-wrap: wrap; gap: 8px; }
+  .pantalla-ficha .texto-titulo, .input-titulo { font-size: clamp(1.4rem, 5vw, 2rem); }
+  .titulo-revelado { font-size: clamp(1.5rem, 7vw, 3.5rem); }
+}
+@media (max-width: 600px) {
+  .panel-superior { padding: 12px; }
+  .titulo-dm { font-size: 1.15rem; }
+  .cuerpo-tablero { grid-template-columns: minmax(0,1fr); }
+  .mesa-central-fisica { flex-direction: column; height: auto; }
+  .mesa-mitad-der { order: -1; }
+  .tapete-caida-wrap { min-height: 105px; }
+  .tapete-caida { max-height: 165px; }
+  .mesa-mitad-izq { width: 100%; height: 214px; border-right: 0; border-top: 1px solid #334155; }
+  .controles-mesa { padding: 10px; }
+  .fila-botones-dados { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); }
+  .fila-botones-dados button { width: 100%; }
+  .lista-baja-cards { grid-template-columns: repeat(auto-fit,minmax(min(100%,210px),1fr)); }
+  .drawer { width: min(400px,100%); max-width: 100%; padding: 14px; }
+  .drawer-header { padding-right: 37px; }
+  .grilla-estadisticas { grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+  .caja-stat { min-width: 0; }
+  .stat-skills { padding-inline: 5px; }
+  .grilla-fisica { grid-template-columns: repeat(3,minmax(0,1fr)); }
+  .panel-oscuro, .panel-identidad { padding: 12px; }
+  .avatar-box { width: 74px; }
+  .avatar-img, .avatar-placeholder { height: 80px; }
+  .datos-identidad { flex: 1 1 150px; }
+  .tag :is(input,select), .tag-fisico input { max-width: 100%; min-width: 0; }
+  .acciones-modal, .acciones-iniciativa { flex-wrap: wrap; }
+  .acciones-modal > button { flex: 1; }
+  .panel-oscuro .lista-inventario { padding-right: 8px; }
+}
+@media (pointer: coarse) {
+  button, summary, [role="button"] { touch-action: manipulation; }
+  .btn-sacar-tablero, .btn-borrar-absoluto { opacity: 1; }
+  .btn-sacar-tablero { width: 26px; height: 26px; top: 2px; right: 2px; }
+  .mini-card-pj { padding-right: 32px; }
+  .botones-dm-acciones button, .herramientas button, .fila-botones-dados button, .indice-ficha a { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+.btn-control {
+  color: #fde68a; background: #241b10; border: 1px solid #855419; border-radius: 6px;
+  padding: .5rem .85rem; font-weight: 600; cursor: pointer;
+}
+.btn-control:hover { border-color: #f59e0b; }
+@media (max-width: 600px) {
+  .btn-sacar-tablero:focus-visible, .mini-card-pj:focus-within .btn-sacar-tablero { opacity: 1; }
+}
+@media (max-width: 680px) and (pointer: coarse) {
+  input:not([type=checkbox]):not([type=range]):not([type=color]), select, textarea { font-size: max(16px, 1em); }
+}
+
+.enlace-versiones {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: #fde68a;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}

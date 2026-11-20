@@ -1,68 +1,47 @@
 <script setup>
+definePageMeta({ middleware: 'director' })
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 
 // IMPORTACIONES EXPRESAS DE COMPONENTES
-import GestorTiendasDM from '../../components/dm/GestorTiendasDM.vue' // IMPORTACIÓN CONFIRMADA
-import DmTrackerIniciativa from '../../components/dm/DmTrackerIniciativa.vue'
-import DmMesaDados from '../../components/dm/DmMesaDados.vue'
-import DmDrawerDetalles from '../../components/dm/DmDrawerDetalles.vue'
-import NotasDM from './NotasDM.vue'
+import GestorTiendasDM from '../../../components/dm/GestorTiendasDM.vue' // IMPORTACIÓN CONFIRMADA
+import DmTrackerIniciativa from '../../../components/dm/DmTrackerIniciativa.vue'
+import DmMesaDados from '../../../components/dm/DmMesaDados.vue'
+import DmDrawerDetalles from '../../../components/dm/DmDrawerDetalles.vue'
+import NotasDM from '../../../components/NotasDM.vue'
 
 // --- LÓGICA DE TIENDAS Y CARRITOS ---
 const modalTiendasAbierto = ref(false)
 
-const manejarActualizacionCarritos = (nuevosCarritos) => {
-  estadoMesa.value.carritos = nuevosCarritos
-  guardarMesaDb()
-}
-
-const rechazarCompra = (pjId) => {
-  if (estadoMesa.value.carritos[pjId]) {
-    estadoMesa.value.carritos[pjId].estado = 'rechazado'
-    guardarMesaDb()
-    setTimeout(() => { delete estadoMesa.value.carritos[pjId]; guardarMesaDb() }, 2500)
-  }
-}
-
-const aprobarCompra = async (pjId) => {
-  const cart = estadoMesa.value.carritos[pjId]
-  const pj = personajesActivos.value.find(p => p.id === pjId)
-  if (!cart || !pj) return
-
-  const m = pj.monedas || { ppt: 0, po: 0, plata: 0, pc: 0 }
-  let balanceCobre = (m.ppt * 10000) + (m.po * 1000) + (m.plata * 100) + m.pc
-
-  if (balanceCobre < cart.total) return alert("El héroe no tiene los fondos declarados.")
-
-  balanceCobre -= cart.total
-  let resto = balanceCobre
-  const nPpt = Math.floor(resto / 10000); resto %= 10000;
-  const nPo = Math.floor(resto / 1000); resto %= 1000;
-  const nPlata = Math.floor(resto / 100); resto %= 100;
-
-  const nuevoInventario = [...(pj.inventario || [])]
-  cart.items.forEach(it => {
-    nuevoInventario.push({
-      id: Date.now() + Math.random(),
-      nombre: it.nombre,
-      cantidad: 1,
-      tipo: 'Equipamiento',
-      peso: it.peso || 0,
-      bono: it.bono || ''
-    })
-  })
-
-  await supabase.from('characters').update({
-    monedas: { ppt: nPpt, po: nPo, plata: nPlata, pc: resto },
-    inventario: nuevoInventario
-  }).eq('id', pjId)
-
-  estadoMesa.value.carritos[pjId].estado = 'aprobado'
-  guardarMesaDb()
-  setTimeout(() => { delete estadoMesa.value.carritos[pjId]; guardarMesaDb() }, 2500)
+const { avisar } = useAvisos()
+const resolviendo = ref(false)
+const pedidos = computed(() => Object.entries(estadoMesa.value.carritos || {})
+  .filter(([, pedido]) => pedido.estado === 'pagando'))
+async function resolverPedido(pjId, pedido, aprobar) {
+  if (resolviendo.value) return
+  resolviendo.value = true
+  try {
+    if (aprobar) {
+      const { error } = await supabase.rpc('dnd_vender', { p_campana: campaignId, p_tienda: String(pedido.tienda),
+        p_pedido: pjId, p_operacion: pedido.id, p_lineas: [] })
+      if (error) throw error
+    } else {
+      await actualizarCampana(supabase, campaignId, 'mesa_estado', mesa => {
+        const actual = mesa?.carritos?.[pjId]
+        if (actual?.id !== pedido.id || actual.estado !== 'pagando') throw new Error('El pedido cambió.')
+        actual.estado = 'rechazado'
+        return mesa
+      })
+    }
+    if (estadoMesa.value.carritos[pjId]?.id === pedido.id)
+      estadoMesa.value.carritos[pjId].estado = aprobar ? 'aprobado' : 'rechazado'
+    avisar(aprobar ? 'Compra aprobada.' : 'Pedido rechazado.')
+  } catch (e) { avisar(e.message, true) }
+  finally { resolviendo.value = false }
 }
 
 const route = useRoute()
+const campaignId = route.params.id
+const errorCarga = ref(false)
 const router = useRouter()
 const supabase = useSupabaseClient()
 
@@ -124,17 +103,21 @@ const calcModStr = (val) => { const m = calcMod(val); return m >= 0 ? `+${m}` : 
 // ------------------------------------------
 // PERSISTENCIA DE MESA Y DADOS
 // ------------------------------------------
-let saveTimeout = null
-const guardarMesaDb = async () => {
-  clearTimeout(saveTimeout)
-  saveTimeout = setTimeout(async () => {
-    await supabase.from('campaigns').update({ mesa_estado: estadoMesa.value }).eq('id', route.params.id)
-  }, 1000)
+let ultimaMesa = {}
+let colaMesa = Promise.resolve()
+let montado = true
+function guardarMesaDb() {
+  const captura = JSON.parse(JSON.stringify(estadoMesa.value))
+  delete captura.carritos
+  colaMesa = colaMesa.then(async () => {
+    const cambios = Object.fromEntries(Object.entries(captura).filter(([k, v]) =>
+      JSON.stringify(v) !== JSON.stringify(ultimaMesa[k])))
+    if (!Object.keys(cambios).length) return
+    await actualizarCampana(supabase, campaignId, 'mesa_estado', previa => ({ ...previa, ...cambios }))
+    ultimaMesa = captura
+  }).catch(e => avisar('No se guardaron los cambios de la mesa. ' + e.message, true))
+  return colaMesa
 }
-const guardarHistorialDb = async (nuevoHistorial) => {
-  await supabase.from('campaigns').update({ historial_dados: nuevoHistorial }).eq('id', route.params.id)
-}
-
 // ------------------------------------------
 // LÓGICA DE DADOS
 // ------------------------------------------
@@ -142,7 +125,7 @@ const agregarDadoDm = (caras) => dmPool.value.push(caras)
 const limpiarPoolDm = () => { dmPool.value = []; dmBono.value = 0; dmDadosEnMesa.value = []; dmResultadoFinal.value = 0 }
 
 const tirarPoolDm = (tituloPerso = null) => {
-  if (dmPool.value.length === 0) return
+  if (dmTirando.value || !dmPool.value.length) return
   dmTirando.value = true
   dmResultadoFinal.value = 0
   const arrayDeCaras = [...dmPool.value]
@@ -158,7 +141,7 @@ const tirarPoolDm = (tituloPerso = null) => {
     dmTirando.value = false
 
     const nuevaTirada = {
-      id: Date.now(),
+      id: idOperacion(),
       tirador: 'DM',
       titulo: tituloPerso || 'Tirada del DM',
       dadosStr: dmDadosEnMesa.value.map(d => `d${d.caras}[${d.valor}]`).join(', '),
@@ -171,7 +154,7 @@ const tirarPoolDm = (tituloPerso = null) => {
 
     const nuevoHist = [nuevaTirada, ...historialCompartido.value].slice(0, 30)
     historialCompartido.value = nuevoHist
-    guardarHistorialDb(nuevoHist)
+    anotarTirada(supabase, campaignId, nuevaTirada).catch(e => avisar(e.message, true))
   }, 1200)
 }
 
@@ -184,7 +167,7 @@ const tirarDesdeDrawer = (titulo, caras, bono) => {
 }
 
 const tirarAtaque = (atk) => tirarDesdeDrawer(`Ataca con ${atk.nombre}`, 20, atk.bono)
-const tirarDano = (atk) => { const dados = Array(atk.cant_dados).fill(atk.tipo_dado); tirarDesdeDrawer(`Daño de ${atk.nombre}`, dados, atk.bono_dano) }
+const tirarDano = (atk) => { const dados = Array(Math.max(1, Math.min(100, parseInt(atk.cant_dados) || 1))).fill(Number(atk.tipo_dado) || 6); tirarDesdeDrawer(`Daño de ${atk.nombre}`, dados, atk.bono_dano) }
 const tirarStat = (nombre, valor) => tirarDesdeDrawer(`Chequeo de ${nombre}`, 20, calcMod(valor))
 
 // ------------------------------------------
@@ -197,7 +180,7 @@ const procesarHp = (instanceId, cantidad) => {
   const pj = personajesActivos.value.find(p => p.id === instanceId)
   if (pj) {
     pj.hp_actual = Math.max(0, Math.min(pj.hp_max, pj.hp_actual + cantidad))
-    supabase.from('characters').update({ hp_actual: pj.hp_actual }).eq('id', pj.id).then()
+    guardarCampoPJ(pj, 'hp_actual')
     return
   }
   const npc = estadoMesa.value.npcs.find(n => n.instance_id === instanceId)
@@ -207,10 +190,18 @@ const procesarHp = (instanceId, cantidad) => {
   if (en) { en.hp_actual = Math.max(0, Math.min(en.hp_max, en.hp_actual + cantidad)); guardarMesaDb() }
 }
 
+async function guardarCampoPJ(pj, campo) {
+  const { error } = await supabase.from('characters').update({ [campo]: pj[campo] }).eq('id', pj.id).select('id').single()
+  if (error) {
+    avisar('No se pudo guardar el cambio del personaje.', true)
+    const { data } = await supabase.from('characters').select(campo).eq('id', pj.id).single()
+    if (data) pj[campo] = data[campo]
+  }
+}
 const guardarHpYQuitarFoco = (event, entidad, tipo) => {
   entidad.hp_actual = Math.max(0, Math.min(entidad.hp_max, entidad.hp_actual))
   if (tipo === 'pj') {
-    supabase.from('characters').update({ hp_actual: entidad.hp_actual }).eq('id', entidad.id).then()
+    guardarCampoPJ(entidad, 'hp_actual')
   } else {
     guardarMesaDb()
   }
@@ -222,31 +213,37 @@ const limpiarVisionJugadores = () => { estadoMesa.value.entidadVisible = null; g
 
 const cargarMesaDM = async () => {
   cargando.value = true
+  errorCarga.value = false
   const { data: cData } = await supabase.from('campaigns').select('*').eq('id', route.params.id).single()
+  if (!cData) { cargando.value = false; errorCarga.value = true; return }
   if (cData) {
     campana.value = cData
-    if (cData.mesa_estado) estadoMesa.value = cData.mesa_estado
+    estadoMesa.value = estadoInicial(cData.mesa_estado)
+    ultimaMesa = JSON.parse(JSON.stringify(estadoMesa.value))
     if (cData.historial_dados) historialCompartido.value = cData.historial_dados
   }
 
   const { data: pData } = await supabase.from('characters').select('*').eq('campaign_id', route.params.id)
+  if (!pData) { cargando.value = false; errorCarga.value = true; return }
+  if (!montado) return
   if (pData) {
-    const parsedData = pData.map(p => { try { p.ataques = p.ataques || [] } catch { p.ataques = [] }; return p })
+    const parsedData = pData.map(p => ({ ...p, ataques: listaGuardada(p.ataques) }))
     todosLosPjsDeCampana.value = parsedData.filter(p => p.tipo === 'pj' || !p.tipo)
     npcsDisponibles.value = parsedData.filter(p => p.tipo === 'npc')
     enemigosDisponibles.value = parsedData.filter(p => p.tipo === 'enemigo')
   }
 
-  canalMesa = supabase.channel('mesa_compartida')
+  canalMesa = supabase.channel('mesa_compartida_' + campaignId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${route.params.id}` }, (payload) => {
+      estadoMesa.value.carritos = payload.new.mesa_estado?.carritos || {}
       if (payload.new.historial_dados) historialCompartido.value = payload.new.historial_dados
     }).subscribe()
 
-  canalPersonajes = supabase.channel('personajes_realtime')
+  canalPersonajes = supabase.channel('personajes_realtime_' + campaignId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'characters', filter: `campaign_id=eq.${route.params.id}` }, (payload) => {
       const pjIndex = todosLosPjsDeCampana.value.findIndex(p => p.id === payload.new.id)
       if (pjIndex !== -1) {
-        todosLosPjsDeCampana.value[pjIndex].hp_actual = payload.new.hp_actual
+        Object.assign(todosLosPjsDeCampana.value[pjIndex], payload.new)
       }
     }).subscribe()
 
@@ -257,19 +254,20 @@ const cargarMesaDM = async () => {
 }
 
 onUnmounted(() => {
+  montado = false
   if (canalMesa) supabase.removeChannel(canalMesa)
   if (canalPersonajes) supabase.removeChannel(canalPersonajes)
 })
 
-const pjsFiltrados = computed(() => todosLosPjsDeCampana.value.filter(p => p.nombre_pj.toLowerCase().includes(filtroPj.value.toLowerCase())))
-const npcsFiltrados = computed(() => npcsDisponibles.value.filter(n => n.nombre_pj.toLowerCase().includes(filtroNpc.value.nombre.toLowerCase()) && (filtroNpc.value.dificultad === '' || n.dificultad == filtroNpc.value.dificultad)))
-const enemigosFiltrados = computed(() => enemigosDisponibles.value.filter(e => e.nombre_pj.toLowerCase().includes(filtroEnemigo.value.nombre.toLowerCase()) && (filtroEnemigo.value.dificultad === '' || e.dificultad == filtroEnemigo.value.dificultad)))
-const ataquesFiltradosDrawer = computed(() => { if (!entidadActiva.value || !entidadActiva.value.ataques) return []; return entidadActiva.value.ataques.filter(a => a.nombre.toLowerCase().includes(filtroAtaquesDrawer.value.toLowerCase())) })
+const pjsFiltrados = computed(() => todosLosPjsDeCampana.value.filter(p => p.nombre_pj?.toLowerCase().includes(filtroPj.value.toLowerCase())))
+const npcsFiltrados = computed(() => npcsDisponibles.value.filter(n => n.nombre_pj?.toLowerCase().includes(filtroNpc.value.nombre.toLowerCase()) && (filtroNpc.value.dificultad === '' || n.dificultad == filtroNpc.value.dificultad)))
+const enemigosFiltrados = computed(() => enemigosDisponibles.value.filter(e => e.nombre_pj?.toLowerCase().includes(filtroEnemigo.value.nombre.toLowerCase()) && (filtroEnemigo.value.dificultad === '' || e.dificultad == filtroEnemigo.value.dificultad)))
+const ataquesFiltradosDrawer = computed(() => { if (!entidadActiva.value || !entidadActiva.value.ataques) return []; return entidadActiva.value.ataques.filter(a => a.nombre?.toLowerCase().includes(filtroAtaquesDrawer.value.toLowerCase())) })
 
 const agregarAlTablero = (entidad, tipo) => {
   if (tipo === 'pj' && !estadoMesa.value.pjs.includes(entidad.id)) estadoMesa.value.pjs.push(entidad.id)
-  else if (tipo === 'npc') estadoMesa.value.npcs.push({ ...entidad, instance_id: 'npc_' + Date.now(), base_id: entidad.id })
-  else if (tipo === 'enemigo') estadoMesa.value.enemigos.push({ ...entidad, instance_id: 'en_' + Date.now(), base_id: entidad.id })
+  else if (tipo === 'npc') estadoMesa.value.npcs.push({ ...entidad, instance_id: 'npc_' + idOperacion(), base_id: entidad.id })
+  else if (tipo === 'enemigo') estadoMesa.value.enemigos.push({ ...entidad, instance_id: 'en_' + idOperacion(), base_id: entidad.id })
   guardarMesaDb(); modalAgregarJugadorAbierto.value = false; modalAgregarNpcAbierto.value = false; modalAgregarEnemigoAbierto.value = false
 }
 const desvincular = (idUnico, tipo) => {
@@ -285,6 +283,7 @@ const abrirFichaNuevaPestana = () => { window.open(`/personajes/${entidadActiva.
 const prepararIniciativa = () => { seleccionIniciativa.value = todasLasEntidadesActivas.value.map(e => e.instance_id || e.id); modalIniciativaAbierto.value = true }
 const lanzarIniciativaGlobal = () => {
   const combatientes = todasLasEntidadesActivas.value.filter(e => seleccionIniciativa.value.includes(e.instance_id || e.id))
+  if (!combatientes.length) return avisar('Seleccioná al menos un combatiente.')
   ordenIniciativa.value = combatientes.map(c => {
     const d20 = Math.floor(Math.random() * 20) + 1; const modDex = calcMod(c.destreza)
     return { unique_id: c.instance_id || c.id, nombre: c.nombre_pj, imagen: c.imagen_url, total: d20 + modDex, hp_actual: c.hp_actual, hp_max: c.hp_max }
@@ -303,7 +302,7 @@ const agregarEfectoManual = (entidad, tipo) => {
   if (!entidad.efectos.some(e => e.id === efectoAInsertar.value.id)) {
     entidad.efectos.push(efectoAInsertar.value)
     if (tipo === 'pj') {
-      supabase.from('characters').update({ efectos: entidad.efectos }).eq('id', entidad.id).then()
+      guardarCampoPJ(entidad, 'efectos')
     } else {
       guardarMesaDb()
     }
@@ -314,7 +313,7 @@ const agregarEfectoManual = (entidad, tipo) => {
 const quitarEfectoManual = (entidad, tipo, idEfecto) => {
   entidad.efectos = entidad.efectos.filter(e => e.id !== idEfecto)
   if (tipo === 'pj') {
-    supabase.from('characters').update({ efectos: entidad.efectos }).eq('id', entidad.id).then()
+    guardarCampoPJ(entidad, 'efectos')
   } else {
     guardarMesaDb()
   }
@@ -335,15 +334,16 @@ const agregarEfectoDesdeObj = (entidad, tipo, objEfecto) => {
   if (!entidad.efectos) entidad.efectos = []
   if (!entidad.efectos.some(e => e.id === objEfecto.id)) {
     entidad.efectos.push(objEfecto)
-    if (tipo === 'pj') supabase.from('characters').update({ efectos: entidad.efectos }).eq('id', entidad.id).then()
+    if (tipo === 'pj') guardarCampoPJ(entidad, 'efectos')
     else guardarMesaDb()
   }
 }
 
 const limpiarHistorialGlobal = async () => {
   if(confirm("¿Estás seguro de querer borrar todo el registro de dados de esta sesión?")) {
-    historialCompartido.value = [] 
-    await supabase.from('campaigns').update({ historial_dados: [] }).eq('id', route.params.id)
+    const { error } = await supabase.from('campaigns').update({ historial_dados: [] }).eq('id', campaignId).select('id').single()
+    if (error) return avisar('No se pudo borrar el historial.', true)
+    historialCompartido.value = []
   }
 }
 
@@ -367,7 +367,7 @@ const manejarProyeccionVision = (payload) => {
 }
 
 const manejarProyeccionTienda = (payload) => {
-  estadoMesa.value.tiendaVisible = { nombre: payload.nombreLugar, inventario: payload.inventario }
+  estadoMesa.value.tiendaVisible = { id: payload.id, sesion: idOperacion(), targets: 'all', nombre: payload.nombreLugar, inventario: payload.inventario }
   guardarMesaDb()
   modalTiendasAbierto.value = false
 }
@@ -379,12 +379,13 @@ onMounted(() => { cargarMesaDM() })
   <div class="mesa-dm-pantalla" :class="{'drawer-open': drawerAbierto}">
     <div class="filtro-oscuro"></div>
     <div v-if="cargando" class="cargando">Abriendo grimorio de campaña...</div>
+    <div v-else-if="errorCarga" class="estado-partida">No se pudo abrir la mesa. <button @click="cargarMesaDM">Reintentar</button><NuxtLink to="/dashboard">Volver</NuxtLink></div>
     <div v-else class="layout-dm">
       
       <div class="panel-superior">
         <div class="header-izq">
           <button @click="router.push(`/campanas/${route.params.id}`)" class="btn-ghost">← Salir</button>
-          <h1 class="titulo-dm">Mesa del DM: <span class="campana-name">{{ campana.nombre }}</span></h1>
+          <h1 class="titulo-dm">Mesa del DM: <span class="campana-name">{{ campana.nombre_campanya || campana.nombre }}</span></h1>
           <div class="toggle-oculto">
             <span class="lbl-oculto">Ocultar Dados</span>
             <label class="switch"><input type="checkbox" v-model="dadosOcultos"><span class="slider round"></span></label>
@@ -405,6 +406,18 @@ onMounted(() => { cargarMesaDM() })
         </div>
       </div>
 
+      <section v-if="pedidos.length || estadoMesa.tiendaVisible" class="pedidos-mesa">
+        <button v-if="estadoMesa.tiendaVisible" @click="estadoMesa.tiendaVisible = null; guardarMesaDb()">Cerrar tienda proyectada</button>
+        <article v-for="([id, pedido]) in pedidos" :key="pedido.id">
+          <strong>{{ todosLosPjsDeCampana.find(p => p.id === id)?.nombre_pj || 'Aventurero' }}</strong>
+          <span>{{ (pedido.items || []).map(i => (i.unidades || 1) + ' × ' + i.nombre).join(', ') }} · {{ pedido.total }} pc</span>
+          <small v-if="pedido.patrocinador">Paga {{ todosLosPjsDeCampana.find(p => p.id === pedido.patrocinador)?.nombre_pj }}</small>
+          <small v-if="!pedido.id || !pedido.tienda">Pedido anterior. Volvé a proyectar el catálogo para renovarlo.</small>
+          <button :disabled="resolviendo || !pedido.id || !pedido.tienda" @click="resolverPedido(id, pedido, true)">Aprobar</button>
+          <button :disabled="resolviendo" @click="resolverPedido(id, pedido, false)">Rechazar</button>
+        </article>
+      </section>
+
       <DmTrackerIniciativa 
         v-if="combateActivo"
         :ordenIniciativa="ordenIniciativa" 
@@ -421,7 +434,7 @@ onMounted(() => { cargarMesaDM() })
               <h3>{{ pj.nombre_pj }}</h3>
               <div class="hp-direct-box relative" @click.stop>
                 <span v-if="tooltipActivo === pj.id" class="hp-tooltip">↵ Enter para guardar</span>
-                <input type="number" v-model="pj.hp_actual" @focus="tooltipActivo = pj.id" @blur="tooltipActivo = null" @keyup.enter="guardarHpYQuitarFoco($event, pj, 'pj')" class="input-hp-rapido"/>
+                <input type="number" v-model="pj.hp_actual" @focus="tooltipActivo = pj.id" @blur="tooltipActivo = null" @keyup.enter="$event.target.blur()" @change="guardarHpYQuitarFoco($event, pj, 'pj')" class="input-hp-rapido"/>
                 <span>/ {{ pj.hp_max }}</span>
               </div>
             </div>
@@ -436,10 +449,10 @@ onMounted(() => { cargarMesaDM() })
               <img v-if="pj.imagen_url" :src="pj.imagen_url" class="card-avatar" /><div v-else class="card-fallback">🛡️</div>
               <div class="card-info">
                 <h3>{{ pj.nombre_pj }}</h3>
-                <div class="hp-bar-container"><div class="hp-bar-fill" :style="{width: (pj.hp_actual/pj.hp_max)*100 + '%'}"></div></div>
+                <div class="hp-bar-container"><div class="hp-bar-fill" :style="{width: (pj.hp_actual / Math.max(1, pj.hp_max)) * 100 + '%'}"></div></div>
                 <div class="hp-direct-box relative" @click.stop>
                   <span v-if="tooltipActivo === pj.id" class="hp-tooltip">↵ Enter</span>
-                  <input type="number" v-model="pj.hp_actual" @focus="tooltipActivo = pj.id" @blur="tooltipActivo = null" @keyup.enter="guardarHpYQuitarFoco($event, pj, 'pj')" class="input-hp-rapido"/>
+                  <input type="number" v-model="pj.hp_actual" @focus="tooltipActivo = pj.id" @blur="tooltipActivo = null" @keyup.enter="$event.target.blur()" @change="guardarHpYQuitarFoco($event, pj, 'pj')" class="input-hp-rapido"/>
                   <span>/ {{ pj.hp_max }}</span>
                 </div>
                 <div class="efectos-mini" v-if="pj.efectos && pj.efectos.length > 0">
@@ -473,10 +486,10 @@ onMounted(() => { cargarMesaDM() })
               <img v-if="pj.imagen_url" :src="pj.imagen_url" class="card-avatar" /><div v-else class="card-fallback">🛡️</div>
               <div class="card-info">
                 <h3>{{ pj.nombre_pj }}</h3>
-                <div class="hp-bar-container"><div class="hp-bar-fill" :style="{width: (pj.hp_actual/pj.hp_max)*100 + '%'}"></div></div>
+                <div class="hp-bar-container"><div class="hp-bar-fill" :style="{width: (pj.hp_actual / Math.max(1, pj.hp_max)) * 100 + '%'}"></div></div>
                 <div class="hp-direct-box relative" @click.stop>
                   <span v-if="tooltipActivo === pj.id" class="hp-tooltip">↵ Enter</span>
-                  <input type="number" v-model="pj.hp_actual" @focus="tooltipActivo = pj.id" @blur="tooltipActivo = null" @keyup.enter="guardarHpYQuitarFoco($event, pj, 'pj')" class="input-hp-rapido"/>
+                  <input type="number" v-model="pj.hp_actual" @focus="tooltipActivo = pj.id" @blur="tooltipActivo = null" @keyup.enter="$event.target.blur()" @change="guardarHpYQuitarFoco($event, pj, 'pj')" class="input-hp-rapido"/>
                   <span>/ {{ pj.hp_max }}</span>
                 </div>
                 <div class="efectos-mini" v-if="pj.efectos && pj.efectos.length > 0">
@@ -498,7 +511,7 @@ onMounted(() => { cargarMesaDM() })
                   <h3>{{ npc.nombre_pj }}</h3>
                   <div class="hp-direct-box relative" @click.stop>
                     <span v-if="tooltipActivo === npc.instance_id" class="hp-tooltip">↵ Enter</span>
-                    <input type="number" v-model="npc.hp_actual" @focus="tooltipActivo = npc.instance_id" @blur="tooltipActivo = null" @keyup.enter="guardarHpYQuitarFoco($event, npc, 'npc')" class="input-hp-rapido"/>
+                    <input type="number" v-model="npc.hp_actual" @focus="tooltipActivo = npc.instance_id" @blur="tooltipActivo = null" @keyup.enter="$event.target.blur()" @change="guardarHpYQuitarFoco($event, npc, 'npc')" class="input-hp-rapido"/>
                     <span>/ {{ npc.hp_max }}</span>
                   </div>
                   <div class="efectos-mini" v-if="npc.efectos && npc.efectos.length > 0">
@@ -518,7 +531,7 @@ onMounted(() => { cargarMesaDM() })
                   <h3>{{ en.nombre_pj }}</h3>
                   <div class="hp-direct-box relative" @click.stop>
                     <span v-if="tooltipActivo === en.instance_id" class="hp-tooltip">↵ Enter</span>
-                    <input type="number" v-model="en.hp_actual" @focus="tooltipActivo = en.instance_id" @blur="tooltipActivo = null" @keyup.enter="guardarHpYQuitarFoco($event, en, 'enemigo')" class="input-hp-rapido"/>
+                    <input type="number" v-model="en.hp_actual" @focus="tooltipActivo = en.instance_id" @blur="tooltipActivo = null" @keyup.enter="$event.target.blur()" @change="guardarHpYQuitarFoco($event, en, 'enemigo')" class="input-hp-rapido"/>
                     <span>/ {{ en.hp_max }}</span>
                   </div>
                   <div class="efectos-mini" v-if="en.efectos && en.efectos.length > 0">
@@ -530,7 +543,7 @@ onMounted(() => { cargarMesaDM() })
           </div>
         </div>
 
-        <NotasDM :campaignId="route.params.id" :pantallaCompleta="true" />
+        <NotasDM :campaignId="route.params.id" />
 
       </div>
     </div>

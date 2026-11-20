@@ -16,7 +16,7 @@ const caracteristicas = [
 
 const calcMod = (valor) => Math.floor((valor - 10) / 2)
 const calcModStr = (valor) => { const m = calcMod(valor); return m >= 0 ? `+${m}` : m }
-const calcHabilidadNum = (statBase, isProf) => calcMod(props.pj[statBase]) + (isProf ? 3 : 0)
+const calcHabilidadNum = (statBase, isProf) => calcMod(props.pj[statBase]) + (isProf ? 2 + Math.floor((Math.max(1, Math.min(20, Number(props.pj.nivel) || 1)) - 1) / 4) : 0)
 const calcHabilidadStr = (statBase, isProf) => { const total = calcHabilidadNum(statBase, isProf); return total >= 0 ? `+${total}` : total }
 
 const tirarStat = (nombre, statBase) => emit('lanzarDado', { titulo: `Prueba de ${nombre}`, cant: 1, caras: 20, bono: calcMod(props.pj[statBase]) })

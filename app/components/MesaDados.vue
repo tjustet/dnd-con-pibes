@@ -1,5 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+const { avisar } = useAvisos()
+let montado = true
 const supabase = useSupabaseClient()
 
 const props = defineProps({
@@ -37,6 +39,7 @@ const conectarMesa = async () => {
   }
 
   // Escuchar en tiempo real
+  if (!montado) return
   canalMesa = supabase.channel('jugador_dados_' + props.jugador)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${props.campanaId}` }, (payload) => {
       if (payload.new.historial_dados) {
@@ -51,6 +54,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  montado = false
   if (canalMesa) supabase.removeChannel(canalMesa)
 })
 
@@ -61,11 +65,13 @@ const ejecutarTirada = async (titulo, cantDados, caras, bonoNum, efecto_vinculad
     return
   }
 
+  if (tirando.value) return
   panelAbierto.value = true
   tirando.value = true
   resultadoFinal.value = 0
   
-  const arrayCaras = Array(cantDados).fill(caras)
+  const arrayCaras = Array.isArray(caras) ? [...caras] : Array(Math.max(1, Math.min(100, parseInt(cantDados) || 1))).fill(Number(caras) || 20)
+  bonoNum = Number(bonoNum) || 0
 
   // Animación 3D falsa
   const intervalo = setInterval(() => {
@@ -86,7 +92,7 @@ const ejecutarTirada = async (titulo, cantDados, caras, bonoNum, efecto_vinculad
     tirando.value = false
 
     const nuevaTirada = {
-      id: Date.now(),
+      id: idOperacion(),
       tirador: props.jugador || 'Desconocido',
       titulo: titulo,
       dadosStr: dadosEnMesa.value.map(d => `d${d.caras}[${d.valor}]`).join(', '),
@@ -98,12 +104,10 @@ const ejecutarTirada = async (titulo, cantDados, caras, bonoNum, efecto_vinculad
       efecto_vinculado: efecto_vinculado
     }
 
-    // Para evitar pisarse con otros, traemos el último historial justo antes de guardar
-    const { data } = await supabase.from('campaigns').select('historial_dados').eq('id', props.campanaId).single()
-    const histActual = data?.historial_dados || []
-    const nuevoHist = [nuevaTirada, ...histActual].slice(0, 30) // Guardamos 30 max
-
-    await supabase.from('campaigns').update({ historial_dados: nuevoHist }).eq('id', props.campanaId)
+    try {
+      const historial = await anotarTirada(supabase, props.campanaId, nuevaTirada)
+      historialCompartido.value = historial.filter(h => !h.oculto)
+    } catch (e) { avisar(e.message, true) }
 
   }, 1000)
 }
@@ -117,8 +121,8 @@ defineExpose({
 const agregarDadoManual = (caras) => poolManual.value.push(caras)
 const limpiarPool = () => { poolManual.value = []; bonoManual.value = 0; dadosEnMesa.value = []; resultadoFinal.value = 0 }
 const tirarManual = () => {
-  if (poolManual.value.length === 0) return
-  ejecutarTirada('Tirada Manual', poolManual.value.length, poolManual.value[0], parseInt(bonoManual.value) || 0)
+  if (tirando.value || poolManual.value.length === 0) return
+  ejecutarTirada('Tirada Manual', poolManual.value.length, poolManual.value, parseInt(bonoManual.value) || 0)
   poolManual.value = [] // Limpia después de tirar
 }
 </script>
@@ -152,7 +156,7 @@ const tirarManual = () => {
             {{ d.valor }}
           </div>
         </div>
-        <div v-if="!tirando && resultadoFinal > 0" class="resultado-grande">{{ resultadoFinal }}</div>
+        <div v-if="!tirando && dadosEnMesa.length > 0" class="resultado-grande">{{ resultadoFinal }}</div>
       </div>
 
       <div class="controles-zona">
@@ -196,7 +200,7 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .panel-mesa-global.activo { max-height: 700px; opacity: 1; pointer-events: auto; }
 
 /* Historial */
-.historial-zona { height: 250px; background: #111; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column-reverse; gap: 0.8rem; border-bottom: 2px solid #1e293b; }
+.historial-zona { height: 250px; background: #111; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.8rem; border-bottom: 2px solid #1e293b; }
 .historial-zona::-webkit-scrollbar { width: 4px; }
 .historial-zona::-webkit-scrollbar-thumb { background: #3b82f6; }
 .vacio { text-align: center; color: #475569; font-style: italic; font-size: 0.9rem; margin-top: 1rem; }
@@ -238,4 +242,15 @@ input[type=number]::-webkit-inner-spin-button, input[type=number]::-webkit-outer
 .inp-bono { width: 60px; background: #111; border: 1px solid #475569; color: white; text-align: center; border-radius: 4px; font-weight: bold; }
 .btn-clean { background: transparent; border: 1px solid #ef4444; color: #fca5a5; border-radius: 4px; padding: 0 0.5rem; cursor: pointer; }
 .btn-roll { flex-grow: 1; background: #b45309; border: 1px solid #d97706; color: white; font-family: 'Cinzel', serif; font-weight: bold; border-radius: 4px; cursor: pointer; font-size: 1.1rem; }
+
+.mesa-flotante-wrapper { flex-direction: column-reverse; }
+.panel-mesa-global:not(.activo) { display: none; }
+@media (max-width: 650px), (max-height: 700px) {
+  .mesa-flotante-wrapper { right: 12px; bottom: max(12px, env(safe-area-inset-bottom)); max-width: calc(100vw - 24px); }
+  .btn-abrir-mesa { max-width: 44vw; padding: .6rem; font-size: .9rem; }
+  .panel-mesa-global.activo { width: min(350px,calc(100vw - 24px)); max-height: calc(100dvh - 76px); overflow: auto; }
+  .historial-zona { flex: 0 0 auto; height: min(25dvh, 170px); }
+  .tapete-zona { flex: 0 0 auto; height: min(20dvh, 125px); }
+  .botones-dados { flex-wrap: wrap; }
+}
 </style>

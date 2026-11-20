@@ -138,3 +138,20 @@ bun run preview
 ```
 
 Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+
+## Ejecutar la aplicación revisada
+
+Esta copia conserva el lockfile del proyecto (Nuxt 4.4.8). Usá Node 22.12 o superior de la rama 22, o Node 24.11 o superior de la rama 24.
+
+1. Extraé el proyecto en una carpeta nueva y copiá tu archivo `.env` de la app original a la raíz. Los componentes y el middleware ahora viven en `app/components` y `app/middleware`.
+2. Para habilitar ventas, pedidos y ayuda entre jugadores, ejecutá `supabase/migrations/202611200001_comercio.sql` en el SQL Editor del proyecto de D&D que ya contiene tus tablas. El script agrega las tablas de operaciones y autorizaciones y la función que confirma la venta. Usa el esquema público existente de personajes, campañas, perfiles, tiendas y catálogos. Conserva las equivalencias de monedas de tu aplicación.
+3. Desde la raíz ejecutá los comandos siguientes.
+
+```bash
+npm ci
+npm run dev
+```
+
+Las pruebas de lógica se ejecutan con `node --test tests/*.test.js`. Para generar el servidor de producción usá `npm run build`.
+
+La comprobación de una partida completa requiere dos sesiones de la misma campaña, una de DM y otra de jugador. La publicación Realtime debe incluir `campaigns` y `characters`. Para el recorrido del comercio, proyectá un catálogo con stock, agregá un objeto desde el personaje y aprobá el pedido desde la mesa. El personaje debe recibir la cantidad pedida y la tienda debe descontar esa misma cantidad. Los catálogos proyectados por una versión anterior se actualizan al volver a proyectarlos.

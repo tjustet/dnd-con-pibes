@@ -1,6 +1,7 @@
 <script setup>
+definePageMeta({ middleware: 'director' })
 // IMPORTACIÓN ESTRICTA: Saltamos un nivel hacia atrás para salir de 'pages' y entrar a 'components'
-import GestorCiudades from '../../components/dm/GestorCiudades.vue'
+import GestorCiudades from '../../../components/dm/GestorCiudades.vue'
 </script>
 
 <template>

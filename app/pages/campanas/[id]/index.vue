@@ -1,6 +1,9 @@
 <script setup>
+definePageMeta({ middleware: 'director' })
 import { ref, onMounted } from 'vue'
 
+const { avisar } = useAvisos()
+const errorCarga = ref(false)
 const route = useRoute()
 const router = useRouter()
 const supabase = useSupabaseClient()
@@ -17,16 +20,19 @@ const editandoImagen = ref(false)
 const nuevaUrlImagen = ref('')
 
 const guardarImagenCampana = async () => {
-  await supabase.from('campaigns').update({ imagen_url: nuevaUrlImagen.value }).eq('id', route.params.id)
+  const { error } = await supabase.from('campaigns').update({ imagen_url: nuevaUrlImagen.value }).eq('id', route.params.id)
+  if (error) return avisar('No se pudo actualizar la portada.', true)
   campana.value.imagen_url = nuevaUrlImagen.value
   editandoImagen.value = false
 }
 
 const cargarDatosCampana = async () => {
+  errorCarga.value = false
   cargando.value = true
   try {
     const { data: campanaData } = await supabase.from('campaigns').select('*').eq('id', route.params.id).single()
-    if (campanaData) campana.value = campanaData
+    if (!campanaData) throw new Error('Campaña no disponible')
+    campana.value = campanaData
 
     // Traemos a TODOS (PJs, NPCs y Enemigos) de una sola vez
     const { data: personajesData } = await supabase
@@ -34,6 +40,7 @@ const cargarDatosCampana = async () => {
       .select('id, nombre_pj, raza, clase, nivel, player_email, imagen_url, tipo, dificultad')
       .eq('campaign_id', route.params.id)
     
+    if (!personajesData) throw new Error('Personajes no disponibles')
     if (personajesData) {
       // Filtramos en memoria
       listaPersonajes.value = personajesData.filter(p => p.tipo === 'pj' || !p.tipo)
@@ -41,7 +48,7 @@ const cargarDatosCampana = async () => {
       listaEnemigos.value = personajesData.filter(p => p.tipo === 'enemigo')
     }
   } catch (err) {
-    console.error("Error al forjar los datos:", err)
+    errorCarga.value = true
   } finally {
     cargando.value = false
   }
@@ -50,8 +57,9 @@ const cargarDatosCampana = async () => {
 const borrarCampana = async () => {
   const confirmacion = confirm("⚠️ ATENCIÓN: ¿Estás seguro de que deseas destruir esta campaña para siempre?\n\nEsto eliminará absolutamente todo: personajes, NPCs, enemigos, el historial de dados y el estado de la mesa. No hay vuelta atrás.")
   if (confirmacion) {
-    await supabase.from('campaigns').delete().eq('id', route.params.id)
-    router.push('../../dashboard')
+    const { error } = await supabase.from('campaigns').delete().eq('id', route.params.id).select('id').single()
+    if (error) return avisar('No se pudo eliminar la campaña.', true)
+    router.push('/dashboard')
   }
 }
 
@@ -61,6 +69,7 @@ onMounted(() => {
 </script>
 
 <template>
+  <main>
   <div class="pantalla-campana">
     <div class="filtro-oscuro"></div>
 
@@ -68,19 +77,20 @@ onMounted(() => {
       <span class="texto-cargando">Descifrando pergaminos de la campaña...</span>
     </div>
 
+    <div v-else-if="errorCarga" class="estado-partida">No se pudo cargar la campaña. <button @click="cargarDatosCampana">Reintentar</button><NuxtLink to="/dashboard">Volver</NuxtLink></div>
     <div v-else class="contenedor-principal">
       
       <div class="header-campana">
         <div class="header-izq">
-          <button @click="router.push('../dashboard')" class="btn-regresar" title="Volver al Dashboard">←</button>
-          <h1 class="titulo-campana">{{ campana.nombre }}</h1>
+          <button @click="router.push('/dashboard')" class="btn-regresar" aria-label="Volver al tablero" title="Volver al tablero">←</button>
+          <h1 class="titulo-campana">{{ campana.nombre_campanya || campana.nombre }}</h1>
         </div>
         
         <div class="header-centro">
           <button @click="router.push(`/campanas/${route.params.id}/dm`)" class="btn-dm-acceso">
             👁️ Entrar a la Mesa (DM)
           </button>
-          <button @click="router.push(`/campanas/${route.params.id}/NotasDM`)" class="btn-control">
+          <button @click="router.push(`/campanas/${route.params.id}/notas`)" class="btn-control">
             📝 Notas del DM
           </button>
           <button @click="router.push(`/campanas/${route.params.id}/lugares`)" class="btn-herramienta">
@@ -89,15 +99,15 @@ onMounted(() => {
         </div>
 
         <div class="header-der">
-          <div class="dropdown-creacion">
-            <button class="btn-nuevo">+ Crear Entidad ▼</button>
+          <details class="dropdown-creacion" @keydown.esc="$event.currentTarget.open = false">
+            <summary class="btn-nuevo">+ Crear entidad</summary>
             <div class="dropdown-menu">
               <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=pj`)">Jugador</button>
               <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=npc`)">NPC / Aliado</button>
               <button @click="router.push(`/personajes/nuevo?campana=${route.params.id}&tipo=enemigo`)">Monstruo / Enemigo</button>
             </div>
-          </div>
-          <button @click="editandoImagen = true" class="btn-herramienta" title="Cambiar Portada">🖼️</button>
+          </details>
+          <button @click="nuevaUrlImagen = campana.imagen_url || ''; editandoImagen = true" class="btn-herramienta" title="Cambiar Portada">🖼️</button>
           <button @click="borrarCampana" class="btn-borrar-campana" title="Destruir Campaña">Eliminar Campaña</button>
         </div>
       </div>
@@ -185,6 +195,7 @@ onMounted(() => {
         </div>
       </div>
     </div>
+  </main>
 </template>
 
 <style scoped>
@@ -207,7 +218,7 @@ onMounted(() => {
 
 /* DROPDOWN CREACIÓN */
 .dropdown-creacion { position: relative; display: inline-block; }
-.dropdown-creacion:hover .dropdown-menu { display: flex; }
+.dropdown-creacion[open] .dropdown-menu { display: flex; }
 .dropdown-menu { display: none; position: absolute; right: 0; top: 100%; background: #0a0a0c; border: 1px solid #3b82f6; border-radius: 8px; flex-direction: column; min-width: 180px; z-index: 50; overflow: hidden; box-shadow: 0 10px 25px rgba(0,0,0,0.8); }
 .dropdown-menu button { background: transparent; border: none; border-bottom: 1px solid #1e293b; color: white; padding: 0.8rem 1rem; text-align: left; cursor: pointer; transition: 0.2s; }
 .dropdown-menu button:hover { background: #1e3a8a; }
@@ -296,4 +307,28 @@ onMounted(() => {
 .btn-cancelar:hover { background: #1e293b; color: white; }
 .btn-accion-dm.dorado { background: #b45309; border: 1px solid #d97706; color: white; padding: 0.6rem 1.2rem; border-radius: 6px; cursor: pointer; font-weight: bold; font-family: 'Cinzel', serif; box-shadow: 0 0 10px rgba(245, 158, 11, 0.2); transition: 0.2s; }
 .btn-accion-dm.dorado:hover { background: #d97706; transform: scale(1.02); }
+
+.btn-nuevo { cursor: pointer; }
+.dropdown-menu { min-width: min(190px,80vw); }
+@media (max-width: 820px) {
+  .pantalla-campana { padding: 12px; }
+  .header-campana { align-items: stretch; padding: 12px; gap: 12px; }
+  .header-centro, .header-der { display: flex; flex-wrap: wrap; gap: 8px; padding: 0; }
+  .header-izq { width: 100%; }
+  .titulo-campana { margin: 0; font-size: clamp(1.3rem,5vw,2rem); }
+  .header-centro > button { flex: 1 1 auto; }
+  .dropdown-menu { left: 0; right: auto; }
+  .grilla-personajes { grid-template-columns: minmax(0,1fr); }
+  .tarjeta-pj { flex-wrap: wrap; gap: 12px; }
+  .bloque-entidades { padding: 12px; }
+  .grilla-entidades-bajas { gap: 12px; }
+}
+@media (max-width: 550px) {
+  .tarjeta-pj { display: grid; grid-template-columns: 64px minmax(0,1fr); gap: 10px; }
+  .avatar-zona { width: 64px; height: 64px; margin: 0; }
+  .info-zona { min-width: 0; }
+  .pj-mail { overflow-wrap: anywhere; }
+  .tarjeta-pj > :last-child { grid-column: 1/-1; }
+  .tarjeta-pj .btn-abrir-ficha { width: 100%; }
+}
 </style>

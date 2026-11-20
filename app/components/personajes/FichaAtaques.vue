@@ -7,11 +7,14 @@ const filtroAtaques = ref('')
 const ataquesFiltrados = computed(() => {
   if (!filtroAtaques.value) return props.pj.ataques
   const f = filtroAtaques.value.toLowerCase()
-  return props.pj.ataques.filter(a => a.nombre.toLowerCase().includes(f) || a.desc.toLowerCase().includes(f))
+  return props.pj.ataques.filter(a => (a.nombre || '').toLowerCase().includes(f) || (a.desc || '').toLowerCase().includes(f))
 })
 
 const agregarAtaque = () => props.pj.ataques.push({ nombre: '', bono: 0, cant_dados: 1, tipo_dado: 8, bono_dano: 0, rango: '', desc: '', tipo_ataque: 'melee', nivel: 0, es_nuevo: true })
-const borrarAtaque = (index) => props.pj.ataques.splice(index, 1)
+const borrarAtaque = (atk) => {
+  const index = props.pj.ataques.indexOf(atk)
+  if (index >= 0) props.pj.ataques.splice(index, 1)
+}
 
 const tirarHit = (atk) => emit('lanzarDado', { titulo: `Ataque: ${atk.nombre}`, cant: 1, caras: 20, bono: atk.bono })
 const tirarDano = (atk) => emit('lanzarDado', { titulo: `Daño: ${atk.nombre}`, cant: atk.cant_dados || 1, caras: atk.tipo_dado || 8, bono: atk.bono_dano, efecto: atk.efecto_aplicado })
@@ -48,7 +51,7 @@ const vAutoGrow = {
             <span v-if="atk.efecto_aplicado" class="atk-badge-efecto" style="margin-left: 10px;">{{ atk.efecto_aplicado.icono }} {{ atk.efecto_aplicado.nombre }}</span>
           </h4>
         </div>
-        <button v-if="modoEdicion" @click="borrarAtaque(idx)" class="btn-borrar-absoluto">Borrar</button>
+        <button v-if="modoEdicion" @click="borrarAtaque(atk)" class="btn-borrar-absoluto">Borrar</button>
         <div class="ataque-stats pr-borrar">
           <div class="atk-campo nom"><label>NOMBRE</label><input v-if="modoEdicion" v-model="atk.nombre"/><span v-else class="texto-bold texto-wrap">{{ atk.nombre || '-' }}</span></div>
           <div class="atk-campo"><label>BONO ATQ.</label><input v-if="modoEdicion" type="number" v-model="atk.bono" class="input-min w-30" /><span v-else class="badge-atq">{{ (atk.bono >= 0 ? '+' : '') }}{{ atk.bono || 0 }}</span></div>
