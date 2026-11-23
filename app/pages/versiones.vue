@@ -3,6 +3,16 @@ useHead({ title: 'Historial de versiones' })
 const usuario = useSupabaseUser()
 const versiones = [
   {
+    numero: '0.5.0', fecha: '2026-11-22', fechaVisible: '22 de noviembre de 2026',
+    titulo: 'Fundación de asentamientos',
+    cambios: [
+      'Fundá una aldea, pueblo, ciudad o metrópolis con locales editables y mercadería inicial según el catálogo.',
+      'Cada campaña tiene su propio atlas. Las tiradas secretas y los pergaminos quedan reservados al director.',
+      'Un resultado negativo ya no invierte el daño y la curación. Las salvaciones de muerte se pueden desmarcar.',
+      'El stock conserva las referencias anteriores al editar cantidades y los aliados pueden autorizar un pago desde su ficha.'
+    ]
+  },
+  {
     numero: '0.4.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
     titulo: 'Dados tallados',
     cambios: [

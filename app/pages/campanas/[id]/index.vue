@@ -20,7 +20,7 @@ const editandoImagen = ref(false)
 const nuevaUrlImagen = ref('')
 
 const guardarImagenCampana = async () => {
-  const { error } = await supabase.from('campaigns').update({ imagen_url: nuevaUrlImagen.value }).eq('id', route.params.id)
+  const { error } = await supabase.from('campaigns').update({ imagen_url: nuevaUrlImagen.value }).eq('id', route.params.id).select('id').single()
   if (error) return avisar('No se pudo actualizar la portada.', true)
   campana.value.imagen_url = nuevaUrlImagen.value
   editandoImagen.value = false

@@ -9,7 +9,10 @@ const inventarioFiltrado = computed(() => {
   return props.pj.inventario.filter(i => (i.nombre || '').toLowerCase().includes(f) || (i.nota || '').toLowerCase().includes(f))
 })
 
-const agregarItem = () => props.pj.inventario.push({ nombre: '', cant: 1, peso: '', nota: '', equipado: false })
+const agregarItem = () => {
+  filtroInventario.value = ''
+  props.pj.inventario.push({ nombre: '', cant: 1, peso: '', nota: '', equipado: false })
+}
 const borrarItem = (item) => {
   const index = props.pj.inventario.indexOf(item)
   if (index >= 0) props.pj.inventario.splice(index, 1)

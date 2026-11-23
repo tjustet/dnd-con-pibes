@@ -10,7 +10,10 @@ const ataquesFiltrados = computed(() => {
   return props.pj.ataques.filter(a => (a.nombre || '').toLowerCase().includes(f) || (a.desc || '').toLowerCase().includes(f))
 })
 
-const agregarAtaque = () => props.pj.ataques.push({ nombre: '', bono: 0, cant_dados: 1, tipo_dado: 8, bono_dano: 0, rango: '', desc: '', tipo_ataque: 'melee', nivel: 0, es_nuevo: true })
+const agregarAtaque = () => {
+  filtroAtaques.value = ''
+  props.pj.ataques.push({ nombre: '', bono: 0, cant_dados: 1, tipo_dado: 8, bono_dano: 0, rango: '', desc: '', tipo_ataque: 'melee', nivel: 0, es_nuevo: true })
+}
 const borrarAtaque = (atk) => {
   const index = props.pj.ataques.indexOf(atk)
   if (index >= 0) props.pj.ataques.splice(index, 1)

@@ -20,7 +20,9 @@ const categoriasTiendasPlan = [
   "Alquimia", "Tienda Arcana", "Biblioteca Arcana", "Adivino / Oráculo",
   "Taberna", "Posada", "Panadería", "Carnicería", "Cervecería / Bodega",
   "Gremio de Aventureros", "Tienda de Suministros", "Cartógrafo", "Casa de Subastas",
-  "Establo", "Templo", "Monasterio", "Banco", "Baños Públicos", "Mercado Negro"
+  "Establo", "Templo", "Monasterio", "Banco", "Baños Públicos", "Mercado Negro",
+  "Armería", "Flechería", "Herboristería", "Librería", "Peletería", "Pescadería",
+  "Vidriería", "Frutería", "Cerería", "Tienda de Instrumentos", "Anticuario", "Curandero"
 ]
 
 const vista = ref('lista') 
@@ -77,72 +79,84 @@ const sugerenciaPrecio = computed(() => {
   return "Más de 5.000.000 pc (Legendario)"
 })
 
-const autoSeleccionarTiendas = () => {
-  tiendasSeleccionadasParaCrear.value = []
-  const maxSolicitado = tamanos.find(t => t.id === formCiudad.value.tamano).maxTiendas
-  const max = Math.min(maxSolicitado, categoriasTiendasPlan.length) // 🔒 nunca pedimos más de las que existen
-
-  let opcionesBase = ['Mercado General', 'Taberna', 'Herrería', 'Templo', 'Posada']
-  opcionesBase.forEach(t => { if(tiendasSeleccionadasParaCrear.value.length < max) tiendasSeleccionadasParaCrear.value.push(t) })
-
-  let intentos = 0
-  const maxIntentos = 500 // 🔒 segundo seguro anti-loop infinito
-
-  while(tiendasSeleccionadasParaCrear.value.length < max && intentos < maxIntentos) {
-    let r = categoriasTiendasPlan[Math.floor(Math.random() * categoriasTiendasPlan.length)]
-    if(!tiendasSeleccionadasParaCrear.value.includes(r)) tiendasSeleccionadasParaCrear.value.push(r)
-    intentos++
+const construyendo = ref(false)
+let intentoFundacion
+function sugerirNombre() {
+  const elegir = lista => lista[Math.floor(Math.random() * lista.length)]
+  formCiudad.value.nombre = elegir(['Puerto', 'Valle', 'Paso', 'Monte', 'Faro', 'Vado']) + ' ' +
+    elegir(['del Aliso', 'de la Luna', 'del Cuervo', 'de la Bruma', 'del Roble', 'del Alba', 'de las Brasas'])
+}
+function prepararFundacion() {
+  formCiudad.value = { nombre: '', tamano: 'pueblo', descripcion: '' }
+  sugerirNombre()
+  intentoFundacion = null
+  autoSeleccionarTiendas()
+  vista.value = 'crear'
+}
+function autoSeleccionarTiendas() {
+  const cantidad = tamanos.find(t => t.id === formCiudad.value.tamano).maxTiendas
+  const esenciales = ['Mercado General', 'Taberna', 'Herrería']
+  const opciones = categoriasTiendasPlan.filter(tipo => !esenciales.includes(tipo))
+  for (let i = opciones.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const elegida = opciones[j]
+    opciones[j] = opciones[i]
+    opciones[i] = elegida
   }
+  tiendasSeleccionadasParaCrear.value = [...esenciales, ...opciones].slice(0, cantidad)
 }
 
 const cargarCiudades = async () => {
   buscandoCiudades.value = true
-  const { data, error } = await supabase.from('ciudades').select('id, nombre, tamano, descripcion').order('nombre')
+  const { data, error } = await supabase.from('ciudades').select('id, nombre, tamano, descripcion').eq('campaign_id', route.params.id).order('nombre')
   buscandoCiudades.value = false
   errorCiudades.value = Boolean(error)
   if (data) ciudades.value = data
 }
 
-const crearCiudad = async () => {
-  if (!formCiudad.value.nombre) return avisar("Ponle un nombre al asentamiento.", true)
-  const { data: nuevaCiu, error } = await supabase.from('ciudades').insert([formCiudad.value]).select().single()
-  if (error) return avisar(error.message, true)
-
-  const tAInsertar = tiendasSeleccionadasParaCrear.value.map(tipo => ({
-    ciudad_id: nuevaCiu.id,
-    campaign_id: route.params.id || null,
-    nombre_personalizado: `${tipo} de ${nuevaCiu.nombre}`,
-    tipo: tipo,
-    inventario_actual: [], // Ahora guardará [{ item_id, cantidad, tabla }]
-    empleados: []
-  }))
-
-  if (tAInsertar.length) {
-    const { error: errorTiendas } = await supabase.from('tiendas_sesion').insert(tAInsertar)
-    if (errorTiendas) { avisar('La ciudad se creó, pero los locales no se pudieron crear.', true); vista.value = 'lista'; return cargarCiudades() }
-  }
-  vista.value = 'lista'; cargarCiudades()
+async function crearCiudad() {
+  if (construyendo.value) return
+  const nombre = formCiudad.value.nombre.trim()
+  if (!nombre) return avisar('Poné un nombre al asentamiento.', true)
+  const parametros = { p_campana: route.params.id, p_nombre: nombre, p_tamano: formCiudad.value.tamano,
+    p_descripcion: formCiudad.value.descripcion.trim(), p_tipos: [...tiendasSeleccionadasParaCrear.value] }
+  const firma = JSON.stringify(parametros)
+  if (firma !== intentoFundacion?.firma) intentoFundacion = { firma, id: idOperacion() }
+  construyendo.value = true
+  try {
+    const { error } = await supabase.rpc('dnd_fundar_ciudad', { ...parametros, p_id: intentoFundacion.id })
+    if (error) throw error
+    vista.value = 'lista'
+    busquedaCiudad.value = ''
+    await cargarCiudades()
+    avisar(`${nombre} se fundó con ${parametros.p_tipos.length} locales.`)
+  } catch (e) { avisar('No se pudo confirmar la fundación. ' + e.message, true) }
+  finally { construyendo.value = false }
 }
 
 const guardarCambiosCiudad = async () => {
-  const { error } = await supabase.from('ciudades').update({ nombre: ciudadActiva.value.nombre, descripcion: ciudadActiva.value.descripcion }).eq('id', ciudadActiva.value.id)
+  const { error } = await supabase.from('ciudades').update({ nombre: ciudadActiva.value.nombre, descripcion: ciudadActiva.value.descripcion }).eq('id', ciudadActiva.value.id).select('id').single()
   if (error) return avisar(error.message, true)
   avisar('Asentamiento guardado.')
 }
 
 const borrarCiudad = async (id) => {
   if(confirm("¿Estás seguro de borrar este asentamiento entero con sus comercios?")) {
-    const { error } = await supabase.from('ciudades').delete().eq('id', id)
+    const { error } = await supabase.from('ciudades').delete().eq('id', id).select('id').single()
     if (error) return avisar(error.message, true)
     vista.value = 'lista'; cargarCiudades()
   }
 }
 
+let apertura = 0
 const abrirCiudad = async (ciudad) => {
+  const turno = ++apertura
   ciudadActiva.value = ciudad
   busquedaTienda.value = ''
-  const { data } = await supabase.from('tiendas_sesion').select('*').eq('ciudad_id', ciudad.id).eq('campaign_id', route.params.id).order('tipo')
-  if (data) tiendasDeCiudadActual.value = data
+  const { data, error } = await supabase.from('tiendas_sesion').select('*').eq('ciudad_id', ciudad.id).eq('campaign_id', route.params.id).order('tipo')
+  if (turno !== apertura) return
+  if (error) return avisar('No se pudieron cargar los comercios.', true)
+  tiendasDeCiudadActual.value = data
   vista.value = 'ciudad-detalle'
 }
 
@@ -193,52 +207,26 @@ const cargarTodosLosNpcs = async () => {
 }
 
 // --- ABRIR TIENDA Y RESOLVER IDs DE INVENTARIO ---
-const abrirTienda = async (tienda) => {
+const abrirTienda = async tienda => {
+  const turno = ++apertura
+  const refs = listaGuardada(tienda.inventario_actual)
+  const empleados = listaGuardada(tienda.empleados).map(e => e?.id ?? e).filter(Boolean)
+  const buscar = (tabla, ids) => ids.length ? supabase.from(tabla).select('*').in('id', ids) : { data: [] }
+  const catalogos = ['items_base', 'items_jugadores']
+  const resultados = await Promise.all([
+    ...catalogos.map(tabla => buscar(tabla, refs.filter(r => r?.tabla === tabla).map(r => r.item_id))),
+    buscar('characters', empleados)
+  ])
+  if (turno !== apertura) return
+  if (resultados.some(r => r.error)) return avisar('No se pudo leer el inventario o el personal. Volvé a abrir el local.', true)
   tiendaActiva.value = tienda
-
-  if(!tiendaActiva.value.empleados) tiendaActiva.value.empleados = []
+  empleadosCargados.value = resultados[2].data
   mostrandoSelectorExistente.value = false
-
-  // Cargar Empleados
-  if(tiendaActiva.value.empleados.length > 0 && typeof tiendaActiva.value.empleados[0] === 'object') {
-    tiendaActiva.value.empleados = tiendaActiva.value.empleados.map(e => e.id || e)
-    await supabase.from('tiendas_sesion').update({ empleados: tiendaActiva.value.empleados }).eq('id', tiendaActiva.value.id)
-  }
-  if (tiendaActiva.value.empleados.length > 0) {
-    const { data } = await supabase.from('characters').select('*').in('id', tiendaActiva.value.empleados)
-    if (data) empleadosCargados.value = data
-  } else { empleadosCargados.value = [] }
-
-  // RESOLVER INVENTARIO (IDs -> Objetos reales)
-  inventarioMostrado.value = []
-  const itemsGuardados = tiendaActiva.value.inventario_actual || []
-  
-  if (itemsGuardados.length > 0) {
-    const idsBase = itemsGuardados.filter(i => i.tabla === 'items_base').map(i => i.item_id)
-    const idsCustom = itemsGuardados.filter(i => i.tabla === 'items_jugadores').map(i => i.item_id)
-
-    let catBase = [], catCustom = []
-    if (idsBase.length > 0) {
-      const { data } = await supabase.from('items_base').select('*').in('id', idsBase)
-      if(data) catBase = data
-    }
-    if (idsCustom.length > 0) {
-      const { data } = await supabase.from('items_jugadores').select('*').in('id', idsCustom)
-      if(data) catCustom = data
-    }
-
-    // Fusionamos los datos reales con la cantidad específica de esta tienda
-    inventarioMostrado.value = itemsGuardados.map(refGuardada => {
-      let itemReal = refGuardada.tabla === 'items_base' 
-        ? catBase.find(b => b.id === refGuardada.item_id)
-        : catCustom.find(c => c.id === refGuardada.item_id)
-      
-      if (!itemReal) return null
-      return { ...itemReal, cantidad_en_tienda: refGuardada.cantidad, ref_tabla: refGuardada.tabla }
-    }).filter(i => i !== null)
-  }
-
-  cargarTodosLosNpcs()
+  inventarioMostrado.value = refs.flatMap(r => {
+    const item = resultados[catalogos.indexOf(r?.tabla)]?.data.find(i => i.id === r.item_id)
+    return item ? [{ ...item, cantidad_en_tienda: r.cantidad, ref_tabla: r.tabla }] : []
+  })
+  void cargarTodosLosNpcs()
   vista.value = 'tienda-detalle'
 }
 
@@ -259,85 +247,67 @@ const borrarTienda = async () => {
   }
 }
 
+async function cambiarEmpleado(id, contratar) {
+  const tienda = tiendaActiva.value
+  try {
+    await asignarEmpleado(supabase, tienda.id, id, contratar)
+    const { data, error } = await supabase.from('tiendas_sesion').select('*').eq('id', tienda.id).single()
+    if (error) throw error
+    if (tiendaActiva.value === tienda && vista.value === 'tienda-detalle') await abrirTienda(Object.assign(tienda, data))
+  } catch (e) { avisar('No se pudo actualizar el personal. ' + e.message, true) }
+}
 const confirmarAsignarExistente = async () => {
   if (!npcSeleccionadoAsignar.value) return
-  if (tiendaActiva.value.empleados.includes(npcSeleccionadoAsignar.value)) return avisar("Ese empleado ya trabaja aquí.", true)
-  
-  const { data } = await supabase.from('characters').select('*').eq('id', npcSeleccionadoAsignar.value).single()
-  if (data) {
-    tiendaActiva.value.empleados.push(data.id)
-    empleadosCargados.value.push(data)
-    await supabase.from('tiendas_sesion').update({ empleados: tiendaActiva.value.empleados }).eq('id', tiendaActiva.value.id)
-  }
-  mostrandoSelectorExistente.value = false; npcSeleccionadoAsignar.value = ''
+  await cambiarEmpleado(npcSeleccionadoAsignar.value, true)
+  mostrandoSelectorExistente.value = false
+  npcSeleccionadoAsignar.value = ''
 }
-
-const abrirEdicionEmpleado = (emp) => { npcEditando.value = emp; mostrandoModalNPC.value = true }
-
-const procesarGuardadoNPC = async (npcGuardado) => {
+const abrirEdicionEmpleado = emp => { npcEditando.value = emp; mostrandoModalNPC.value = true }
+const procesarGuardadoNPC = async npc => {
   mostrandoModalNPC.value = false
-  if (npcEditando.value) {
-    const idx = empleadosCargados.value.findIndex(e => e.id === npcGuardado.id)
-    if (idx !== -1) empleadosCargados.value[idx] = npcGuardado
-  } else {
-    tiendaActiva.value.empleados.push(npcGuardado.id)
-    empleadosCargados.value.push(npcGuardado)
-    await supabase.from('tiendas_sesion').update({ empleados: tiendaActiva.value.empleados }).eq('id', tiendaActiva.value.id)
-  }
+  if (npcEditando.value) empleadosCargados.value = empleadosCargados.value.map(e => e.id === npc.id ? npc : e)
+  else await cambiarEmpleado(npc.id, true)
   npcEditando.value = null
 }
-
-const despedirEmpleado = async (npcId) => {
-  if(confirm("¿Remover a este empleado?")) {
-    tiendaActiva.value.empleados = tiendaActiva.value.empleados.filter(id => id !== npcId)
-    empleadosCargados.value = empleadosCargados.value.filter(e => e.id !== npcId)
-    await supabase.from('tiendas_sesion').update({ empleados: tiendaActiva.value.empleados }).eq('id', tiendaActiva.value.id)
-  }
+const despedirEmpleado = id => {
+  if (confirm('¿Remover a este empleado?')) return cambiarEmpleado(id, false)
 }
 
-// --- ACTUALIZAR INVENTARIO (Sincroniza UI y BD de Referencias) ---
-const syncInventarioBD = async () => {
-  // Convertimos el array visual a formato de referencias [ {item_id, cantidad, tabla} ]
-  const arrayLimpio = inventarioMostrado.value.map(item => ({
-    item_id: item.id,
-    cantidad: item.cantidad_en_tienda,
-    tabla: item.ref_tabla
-  }))
+const guardandoStock = ref(false)
+async function cambiarStock(transformar) {
+  if (guardandoStock.value) return false
+  guardandoStock.value = true
   const tienda = tiendaActiva.value
-  const anterior = tienda.inventario_actual
-  const q = supabase.from('tiendas_sesion').update({ inventario_actual: arrayLimpio }).eq('id', tienda.id)
-  const { data, error } = await (anterior == null ? q.is('inventario_actual', null) : q.eq('inventario_actual', JSON.stringify(anterior))).select('id').maybeSingle()
-  if (!data || error) {
-    avisar('El stock cambió o no se pudo guardar. Se recargará la tienda.', true)
-    const { data: actual } = await supabase.from('tiendas_sesion').select('*').eq('id', tienda.id).single()
-    if (actual && tiendaActiva.value.id === tienda.id) await abrirTienda(actual)
-    return false
-  }
-  tienda.inventario_actual = arrayLimpio
-  return true
-}
-
-// --- STOCK AUTOMÁTICO RESTRINGIDO (Solo rellena lo que ya está) ---
-const generarStockAutomatico = async () => {
-  if (inventarioMostrado.value.length === 0) return avisar("Esta tienda está vacía. Forja o importa ítems primero. El reabastecimiento solo rellena el stock de los objetos que el local ya comercializa.", true)
-  
-  let maxNivelEmpleado = 2
-  if (empleadosCargados.value.length > 0) {
-    maxNivelEmpleado = Math.max(...empleadosCargados.value.map(e => parseInt(e.nivel) || 0))
-  }
-
-  // Iteramos sobre los objetos que la tienda ya tiene y re-calculamos cantidad según nivel empleado
-  inventarioMostrado.value.forEach(item => {
-    const nivelObj = item.nivel_objeto || item.nivel || 0
-    if (nivelObj <= maxNivelEmpleado) {
-      if (nivelObj <= 2) item.cantidad_en_tienda = Math.floor(Math.random() * 8) + 6
-      else if (nivelObj <= 5) item.cantidad_en_tienda = Math.floor(Math.random() * 4) + 2
-      else item.cantidad_en_tienda = Math.floor(Math.random() * 2) + 1
+  try {
+    const anterior = tienda.inventario_actual
+    const inventario = listaGuardada(anterior).map(ref => {
+      const item = inventarioMostrado.value.find(i => i.id === ref?.item_id && i.ref_tabla === ref?.tabla)
+      return item ? transformar(ref, item) : ref
+    }).filter(ref => ref !== undefined)
+    const q = supabase.from('tiendas_sesion').update({ inventario_actual: inventario }).eq('id', tienda.id)
+    const { data, error } = await (anterior == null ? q.is('inventario_actual', null) : q.eq('inventario_actual', JSON.stringify(anterior))).select('id').maybeSingle()
+    if (error) throw error
+    if (!data) {
+      const { data: actual } = await supabase.from('tiendas_sesion').select('*').eq('id', tienda.id).single()
+      if (actual && tiendaActiva.value === tienda && vista.value === 'tienda-detalle') await abrirTienda(Object.assign(tienda, actual))
+      throw new Error('El stock cambió. Revisalo antes de reintentar.')
     }
+    tienda.inventario_actual = inventario
+    if (tiendaActiva.value === tienda && vista.value === 'tienda-detalle') await abrirTienda(tienda)
+    return true
+  } catch (e) { avisar(e.message, true); return false }
+  finally { guardandoStock.value = false }
+}
+const generarStockAutomatico = async () => {
+  if (!inventarioMostrado.value.length) return avisar('Primero agregá un artículo al local.', true)
+  const limite = empleadosCargados.value.length ? Math.max(...empleadosCargados.value.map(e => Number(e.nivel) || 0)) : 2
+  const ok = await cambiarStock((ref, item) => {
+    const nivel = item.nivel_objeto ?? item.nivel ?? 0
+    if (nivel > limite) return ref
+    const [min, rango] = nivel <= 2 ? [6, 8] : nivel <= 5 ? [2, 4] : [1, 2]
+    return { ...ref, cantidad: min + Math.floor(Math.random() * rango) }
   })
-
-  if (!await syncInventarioBD()) return
-  avisar("Stock actualizado según el nivel de los empleados.")
+  if (ok) avisar('Stock actualizado según el nivel de los empleados.')
 }
 
 // --- FORJAR ITEM NUEVO (Guarda en BD general, luego vincula) ---
@@ -365,24 +335,12 @@ const agregarObjetoALocal = async () => {
   } finally { forjando.value = false }
 }
 
-const incrementarItem = async (item) => {
-  item.cantidad_en_tienda++
-  await syncInventarioBD()
-}
-
-const decrementarItem = async (item) => {
-  if (item.cantidad_en_tienda > 1) {
-    item.cantidad_en_tienda--
-  } else {
-    inventarioMostrado.value = inventarioMostrado.value.filter(i => i !== item)
-  }
-  await syncInventarioBD()
-}
-
-const eliminarObjetoDeLocal = async (item) => {
-  inventarioMostrado.value = inventarioMostrado.value.filter(i => i !== item)
-  await syncInventarioBD()
-}
+const incrementarItem = item => cambiarStock((ref, actual) => actual === item ? { ...ref, cantidad: Number(ref.cantidad) + 1 } : ref)
+const decrementarItem = item => cambiarStock((ref, actual) => {
+  if (actual !== item) return ref
+  if (ref.cantidad > 1) return { ...ref, cantidad: ref.cantidad - 1 }
+})
+const eliminarObjetoDeLocal = item => cambiarStock((ref, actual) => actual === item ? undefined : ref)
 
 onMounted(() => { cargarCiudades() })
 </script>
@@ -398,8 +356,8 @@ onMounted(() => { cargarCiudades() })
       </h2>
       <div class="acciones-header">
         <button v-if="vista === 'lista'" class="btn-secundario" @click="router.push(`/campanas/${route.params.id}`)">← Campaña</button>
-        <button v-if="vista !== 'lista'" class="btn-secundario" @click="vista = 'lista'">← Atlas</button>
-        <button v-if="vista === 'lista'" class="btn-dorado" @click="vista = 'crear'; autoSeleccionarTiendas()">+ Fundar Asentamiento</button>
+        <button v-if="vista !== 'lista'" class="btn-secundario" @click="apertura++; vista = 'lista'" :disabled="construyendo">← Atlas</button>
+        <button v-if="vista === 'lista'" class="btn-dorado" @click="prepararFundacion">+ Fundar Asentamiento</button>
       </div>
     </div>
 
@@ -421,18 +379,21 @@ onMounted(() => { cargarCiudades() })
     <div v-if="vista === 'crear'" class="vista-creacion">
       <div class="form-basico">
         <div class="input-group">
-          <label>Nombre del Lugar</label>
-          <input type="text" v-model="formCiudad.nombre" class="input-dm" />
+          <label for="atlas-nombre">Nombre del lugar</label>
+          <input id="atlas-nombre" maxlength="120" type="text" v-model="formCiudad.nombre" class="input-dm" />
+          <button type="button" class="sugerir-nombre" @click="sugerirNombre">Sugerir otro nombre</button>
         </div>
         <div class="input-group">
-          <label>Magnitud</label>
-          <select v-model="formCiudad.tamano" @change="autoSeleccionarTiendas" class="input-dm">
+          <label for="atlas-tamano">Tamaño</label>
+          <select id="atlas-tamano" v-model="formCiudad.tamano" @change="autoSeleccionarTiendas" class="input-dm">
             <option v-for="t in tamanos" :key="t.id" :value="t.id">{{ t.nombre }}</option>
           </select>
         </div>
       </div>
       <div class="selector-tiendas">
-        <h3>Locales recomendados (Borra o agrega)</h3>
+        <h3>Locales del asentamiento · {{ tiendasSeleccionadasParaCrear.length }}</h3>
+        <p class="ayuda-fundacion">Podés ajustar la selección. Cada comercio recibe artículos de su rubro si están disponibles en el catálogo.</p>
+        <button type="button" class="btn-secundario" @click="autoSeleccionarTiendas">Volver a sortear locales</button>
         <div class="grilla-categorias">
           <label v-for="l in categoriasTiendasPlan" :key="l" class="checkbox-lugar">
             <input type="checkbox" :value="l" v-model="tiendasSeleccionadasParaCrear" />
@@ -440,7 +401,7 @@ onMounted(() => { cargarCiudades() })
           </label>
         </div>
       </div>
-      <button class="btn-dorado gigante" @click="crearCiudad">Construir Asentamiento</button>
+      <button class="btn-dorado gigante" @click="crearCiudad" :disabled="construyendo">{{ construyendo ? 'Construyendo…' : 'Construir asentamiento' }}</button>
     </div>
 
     <div v-if="vista === 'ciudad-detalle' && ciudadActiva" class="vista-detalle-ciudad">
@@ -607,9 +568,9 @@ onMounted(() => { cargarCiudades() })
                 </div>
                 
                 <div class="col-center controles-cantidad">
-                  <button @click="decrementarItem(item)" class="btn-cant" :class="{'rojo': item.cantidad_en_tienda === 1}">{{ item.cantidad_en_tienda === 1 ? '🗑️' : '-' }}</button>
+                  <button @click="decrementarItem(item)" class="btn-cant" :disabled="guardandoStock" :class="{'rojo': item.cantidad_en_tienda === 1}">{{ item.cantidad_en_tienda === 1 ? '🗑️' : '-' }}</button>
                   <span class="txt-cantidad">{{ item.cantidad_en_tienda }}</span>
-                  <button @click="incrementarItem(item)" class="btn-cant">+</button>
+                  <button @click="incrementarItem(item)" class="btn-cant" :disabled="guardandoStock">+</button>
                 </div>
                 
                 <div class="col-center text-oro">💰 {{ item.precio_cobre }}</div>
@@ -639,6 +600,9 @@ onMounted(() => { cargarCiudades() })
 </template>
 
 <style scoped>
+.sugerir-nombre { align-self: flex-start; color: #facc15; min-height: 36px; text-decoration: underline; text-underline-offset: .2em; }
+.ayuda-fundacion { color: #cbd5e1; margin: .5rem 0 1rem; }
+.selector-tiendas > button { margin-bottom: 1rem; }
 /* LOS ESTILOS SE MANTIENEN IGUAL QUE LA VEZ ANTERIOR PARA NO ROMPER TU DISEÑO, 
    SOLO AGREGUÉ CLASES PARA EL MODAL DE NUEVA TIENDA */
 .gestor-wrapper { padding: 20px; color: #e2e8f0; font-family: 'Inter', sans-serif; }

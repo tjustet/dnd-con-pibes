@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 
 const props = defineProps({
   pj: { type: Object, required: true },
+  puedeVincular: Boolean,
   modoEdicion: { type: Boolean, default: false },
   listaPerfiles: { type: Array, default: () => [] }
 })
@@ -52,7 +53,7 @@ const cerrarImagen = () => { imagenAmpliada.value = false }
         <div class="tag"><label>RAZA</label><input v-if="modoEdicion" v-model="pj.raza" class="input-base" /><span v-else>{{ pj.raza || '-' }}</span></div>
         <div class="tag"><label>ALINEAMIENTO</label><input v-if="modoEdicion" v-model="pj.alineamiento" class="input-base" /><span v-else>{{ pj.alineamiento || '-' }}</span></div>
         <div class="tag"><label>{{ pj.tipo === 'pj' ? 'XP' : 'XP (OTORGA)' }}</label><input v-if="modoEdicion" type="number" v-model="pj.xp" class="input-base" /><span v-else>{{ pj.xp || 0 }}</span></div>
-        <div v-if="modoEdicion && pj.tipo === 'pj'" class="tag selector-email-container">
+        <div v-if="modoEdicion && puedeVincular && pj.tipo === 'pj'" class="tag selector-email-container">
           <label>VINCULAR JUGADOR (EMAIL)</label>
           <select v-model="pj.player_email" class="select-dark">
             <option value="">-- Dejar sin asignar --</option>
@@ -94,15 +95,13 @@ const cerrarImagen = () => { imagenAmpliada.value = false }
         </div>
         <div class="death-row">
           <span>ÉXITOS</span>
-          <input type="checkbox" :checked="pj.salvaciones_exito >= 1" @change="pj.salvaciones_exito = $event.target.checked ? 1 : 0" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_exito >= 2" @change="pj.salvaciones_exito = $event.target.checked ? 2 : pj.salvaciones_exito" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_exito >= 3" @change="pj.salvaciones_exito = $event.target.checked ? 3 : pj.salvaciones_exito" :disabled="!modoEdicion">
+          <input v-for="n in 3" :key="n" type="checkbox" :aria-label="'Éxito ' + n + ' de 3'"
+            :checked="pj.salvaciones_exito >= n" @change="pj.salvaciones_exito = $event.target.checked ? n : n - 1" :disabled="!modoEdicion">
         </div>
         <div class="death-row">
           <span>FALLOS</span>
-          <input type="checkbox" :checked="pj.salvaciones_fallo >= 1" @change="pj.salvaciones_fallo = $event.target.checked ? 1 : 0" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_fallo >= 2" @change="pj.salvaciones_fallo = $event.target.checked ? 2 : pj.salvaciones_fallo" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_fallo >= 3" @change="pj.salvaciones_fallo = $event.target.checked ? 3 : pj.salvaciones_fallo" :disabled="!modoEdicion">
+          <input v-for="n in 3" :key="n" type="checkbox" :aria-label="'Fallo ' + n + ' de 3'"
+            :checked="pj.salvaciones_fallo >= n" @change="pj.salvaciones_fallo = $event.target.checked ? n : n - 1" :disabled="!modoEdicion">
         </div>
       </div>
     </div>

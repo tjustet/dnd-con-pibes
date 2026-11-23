@@ -41,9 +41,14 @@ const cargarCampañasDM = async (dmId) => {
 }
 
 const cargarPersonajesJugador = async (email) => {
-  const { data, error } = await supabase.from('characters').select('id, nombre_pj, clase, raza, nivel, imagen_url, campaigns(nombre_campanya)').eq('player_email', email)
+  const { data, error } = await supabase.from('characters').select('id, nombre_pj, clase, raza, nivel, imagen_url, campaign_id').eq('player_email', email)
   if (error) throw error
-  if (data) misPersonajes.value = data
+  const ids = [...new Set((data || []).map(pj => pj.campaign_id).filter(Boolean))]
+  const { data: campanas, error: errorCampanas } = ids.length
+    ? await supabase.from('campana_publicada').select('id,nombre_campanya').in('id', ids) : { data: [] }
+  if (errorCampanas) throw errorCampanas
+  const nombres = new Map(campanas.map(c => [c.id, c.nombre_campanya]))
+  misPersonajes.value = (data || []).map(pj => ({ ...pj, campana: nombres.get(pj.campaign_id) || 'Sin campaña' }))
 }
 
 const crearCampaña = async () => {
@@ -224,7 +229,7 @@ onBeforeUnmount(() => {
               <div class="info-pj">
                 <h3 class="texto-jugador">{{ pj.nombre_pj }}</h3>
                 <p class="detalle-pj">{{ pj.raza }} - {{ pj.clase }} (Nivel {{ pj.nivel }})</p>
-                <p class="campana-pj">Campaña: {{ pj.campaigns?.nombre_campanya }}</p>
+                <p class="campana-pj">Campaña: {{ pj.campana }}</p>
                 <NuxtLink :to="`/personajes/${pj.id}`" class="btn-link-jugador">Abrir Ficha</NuxtLink>
               </div>
             </div>

@@ -126,44 +126,44 @@ const quitarDadoDm = (caras) => {
   if (!dmTirando.value && indice >= 0) dmPool.value.splice(indice, 1)
 }
 
-const tirarPoolDm = async (titulo = 'Tirada del DM', pool = dmPool.value, bono = dmBono.value) => {
+const tirarPoolDm = async (titulo = 'Tirada del DM', pool = dmPool.value, bono = dmBono.value, efecto = null) => {
   const oculto = dadosOcultos.value
-  const t = await lanzarDadosDm(pool, bono, titulo)
+  const t = await lanzarDadosDm(pool, bono, titulo, efecto)
   if (!t) return
   const registro = {
     id: t.id, tirador: 'DM', titulo: t.titulo, dadosStr: t.dados.map(d => `d${d.caras}[${d.valor}]`).join(', '),
-    bono: t.bono, total: t.total, oculto, targetAsignado: '', mostrarAsignador: false
+    bono: t.bono, total: t.total, efecto_vinculado: t.efecto, oculto, targetAsignado: '', mostrarAsignador: false
   }
-  historialCompartido.value = [registro, ...historialCompartido.value].slice(0, 30)
-  try { await anotarTirada(supabase, campaignId, registro) }
+  try { historialCompartido.value = await anotarTirada(supabase, campaignId, registro) }
   catch (e) { avisar(e.message, true) }
 }
 
 const repetirTiradaDm = () => {
   const t = tiradaDm.value
-  if (t) tirarPoolDm(t.titulo, t.dados.map(d => d.caras), t.bono)
+  if (t) tirarPoolDm(t.titulo, t.dados.map(d => d.caras), t.bono, t.efecto)
 }
 
-const tirarDesdeDrawer = (titulo, caras, bono) => {
+const tirarDesdeDrawer = (titulo, caras, bono, efecto = null) => {
   if (dmTirando.value) return
   limpiarPoolDm()
   if (Array.isArray(caras)) caras.forEach(c => agregarDadoDm(c))
   else agregarDadoDm(caras)
   dmBono.value = bono || 0
-  tirarPoolDm(`${entidadActiva.value.nombre_pj}: ${titulo}`)
+  tirarPoolDm(`${entidadActiva.value.nombre_pj}: ${titulo}`, dmPool.value, dmBono.value, efecto)
 }
 
 const tirarAtaque = (atk) => tirarDesdeDrawer(`Ataca con ${atk.nombre}`, 20, atk.bono)
-const tirarDano = (atk) => { const dados = Array(Math.max(1, Math.min(100, parseInt(atk.cant_dados) || 1))).fill(Number(atk.tipo_dado) || 6); tirarDesdeDrawer(`Daño de ${atk.nombre}`, dados, atk.bono_dano) }
+const tirarDano = (atk) => { const dados = Array(Math.max(1, Math.min(100, parseInt(atk.cant_dados) || 1))).fill(Number(atk.tipo_dado) || 6); tirarDesdeDrawer(`Daño de ${atk.nombre}`, dados, atk.bono_dano, atk.efecto_aplicado) }
 const tirarStat = (nombre, valor) => tirarDesdeDrawer(`Chequeo de ${nombre}`, 20, modificadorCaracteristica(valor))
 
 // ------------------------------------------
 // DAÑO Y CURACIÓN
 // ------------------------------------------
-const aplicarDano = (registro) => { if (registro.targetAsignado) { procesarHp(registro.targetAsignado, -registro.total); registro.mostrarAsignador = false } }
-const curarDano = (registro) => { if (registro.targetAsignado) { procesarHp(registro.targetAsignado, registro.total); registro.mostrarAsignador = false } }
+const aplicarDano = (registro) => { if (registro.targetAsignado) { procesarHp(registro.targetAsignado, -Math.max(0, Number(registro.total) || 0)); registro.mostrarAsignador = false } }
+const curarDano = (registro) => { if (registro.targetAsignado) { procesarHp(registro.targetAsignado, Math.max(0, Number(registro.total) || 0)); registro.mostrarAsignador = false } }
 
 const procesarHp = (instanceId, cantidad) => {
+  if (!cantidad) return
   const pj = personajesActivos.value.find(p => p.id === instanceId)
   if (pj) {
     pj.hp_actual = Math.max(0, Math.min(pj.hp_max, pj.hp_actual + cantidad))
@@ -207,14 +207,14 @@ const cargarMesaDM = async () => {
     campana.value = cData
     estadoMesa.value = estadoInicial(cData.mesa_estado)
     ultimaMesa = JSON.parse(JSON.stringify(estadoMesa.value))
-    if (cData.historial_dados) historialCompartido.value = cData.historial_dados
+    if (cData.historial_dm) historialCompartido.value = cData.historial_dm
   }
 
   const { data: pData } = await supabase.from('characters').select('*').eq('campaign_id', route.params.id)
   if (!pData) { cargando.value = false; errorCarga.value = true; return }
   if (!montado) return
   if (pData) {
-    const parsedData = pData.map(p => ({ ...p, ataques: listaGuardada(p.ataques) }))
+    const parsedData = pData.map(p => ({ ...p, ataques: listaGuardada(p.ataques), efectos: listaGuardada(p.efectos) }))
     todosLosPjsDeCampana.value = parsedData.filter(p => p.tipo === 'pj' || !p.tipo)
     npcsDisponibles.value = parsedData.filter(p => p.tipo === 'npc')
     enemigosDisponibles.value = parsedData.filter(p => p.tipo === 'enemigo')
@@ -223,14 +223,14 @@ const cargarMesaDM = async () => {
   canalMesa = supabase.channel('mesa_compartida_' + campaignId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${route.params.id}` }, (payload) => {
       estadoMesa.value.carritos = payload.new.mesa_estado?.carritos || {}
-      if (payload.new.historial_dados) historialCompartido.value = payload.new.historial_dados
+      if (payload.new.historial_dm) historialCompartido.value = payload.new.historial_dm
     }).subscribe()
 
   canalPersonajes = supabase.channel('personajes_realtime_' + campaignId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'characters', filter: `campaign_id=eq.${route.params.id}` }, (payload) => {
       const pjIndex = todosLosPjsDeCampana.value.findIndex(p => p.id === payload.new.id)
       if (pjIndex !== -1) {
-        Object.assign(todosLosPjsDeCampana.value[pjIndex], payload.new)
+        Object.assign(todosLosPjsDeCampana.value[pjIndex], payload.new, { ataques: listaGuardada(payload.new.ataques), efectos: listaGuardada(payload.new.efectos) })
       }
     }).subscribe()
 
@@ -249,7 +249,7 @@ onUnmounted(() => {
 const pjsFiltrados = computed(() => todosLosPjsDeCampana.value.filter(p => p.nombre_pj?.toLowerCase().includes(filtroPj.value.toLowerCase())))
 const npcsFiltrados = computed(() => npcsDisponibles.value.filter(n => n.nombre_pj?.toLowerCase().includes(filtroNpc.value.nombre.toLowerCase()) && (filtroNpc.value.dificultad === '' || n.dificultad == filtroNpc.value.dificultad)))
 const enemigosFiltrados = computed(() => enemigosDisponibles.value.filter(e => e.nombre_pj?.toLowerCase().includes(filtroEnemigo.value.nombre.toLowerCase()) && (filtroEnemigo.value.dificultad === '' || e.dificultad == filtroEnemigo.value.dificultad)))
-const ataquesFiltradosDrawer = computed(() => { if (!entidadActiva.value || !entidadActiva.value.ataques) return []; return entidadActiva.value.ataques.filter(a => a.nombre?.toLowerCase().includes(filtroAtaquesDrawer.value.toLowerCase())) })
+const ataquesFiltradosDrawer = computed(() => { if (!entidadActiva.value || !entidadActiva.value.ataques) return []; return listaGuardada(entidadActiva.value.ataques).filter(a => a.nombre?.toLowerCase().includes(filtroAtaquesDrawer.value.toLowerCase())) })
 
 const agregarAlTablero = (entidad, tipo) => {
   if (tipo === 'pj' && !estadoMesa.value.pjs.includes(entidad.id)) estadoMesa.value.pjs.push(entidad.id)
@@ -328,7 +328,7 @@ const agregarEfectoDesdeObj = (entidad, tipo, objEfecto) => {
 
 const limpiarHistorialGlobal = async () => {
   if(confirm("¿Estás seguro de querer borrar todo el registro de dados de esta sesión?")) {
-    const { error } = await supabase.from('campaigns').update({ historial_dados: [] }).eq('id', campaignId).select('id').single()
+    const { error } = await supabase.from('campaigns').update({ historial_dados: [], historial_dm: [] }).eq('id', campaignId).select('id').single()
     if (error) return avisar('No se pudo borrar el historial.', true)
     historialCompartido.value = []
   }

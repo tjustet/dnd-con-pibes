@@ -26,9 +26,9 @@ async function refrescar() {
   const lectura = version
   leyendo = true
   try {
-    const { data, error } = await db.from('campaigns').select('mesa_estado').eq('id', props.pj.campaign_id).single()
+    const { data, error } = await db.rpc('dnd_mercado_jugador', { p_campana: props.pj.campaign_id, p_personaje: props.pj.id })
     if (!vigente || ocupado.value || lectura !== version || error) return
-    const mesa = data?.mesa_estado || {}
+    const mesa = data || {}
     const catalogo = mesa.tiendaVisible
     const permitida = catalogo && (catalogo.targets == null || catalogo.targets === 'all' || catalogo.targets.includes(props.pj.id))
     solicitudes.value = Object.entries(mesa.carritos || {}).filter(([, cart]) =>
@@ -58,16 +58,10 @@ async function cambiarCarrito(lineas, estado, ayudante = null) {
   try {
     const nuevo = { id, estado, ayudante, tienda: tiendaActual.id, sesion: tiendaActual.sesion, items: lineas,
       total: lineas.reduce((s, i) => s + i.precio * i.unidades, 0) }
-    const previo = pedido.value?.id
-    const estadoPrevio = pedido.value?.estado
-    await actualizarCampana(db, props.pj.campaign_id, 'mesa_estado', valor => {
-      const mesa = estadoInicial(valor)
-      if (mesa.tiendaVisible?.sesion !== nuevo.sesion || mesa.carritos[props.pj.id]?.id !== previo ||
-          mesa.carritos[props.pj.id]?.estado !== estadoPrevio)
-        throw new Error('El catálogo o el pedido cambió. Volvé a intentarlo.')
-      mesa.carritos[props.pj.id] = nuevo
-      return mesa
-    })
+    const { error } = await db.rpc('dnd_pedido', { p_campana: props.pj.campaign_id, p_personaje: props.pj.id,
+      p_previo: pedido.value ? { id: pedido.value.id, estado: pedido.value.estado } : null, p_nuevo: nuevo })
+    if (error) throw error
+
     items.value = lineas
     pedido.value = nuevo
   } catch (e) { avisar(e.message, true) }
@@ -93,25 +87,10 @@ async function responderAyuda(solicitud, aceptar) {
   ocupado.value = true
   version++
   try {
-    if (aceptar) {
-      const { error } = await db.from('dnd_aportes').insert({
-        campana: props.pj.campaign_id, personaje: props.pj.id, beneficiario: solicitud.de,
-        pedido: solicitud.id, maximo: solicitud.monto
-      })
-      if (error && error.code !== '23505') throw error
-    }
-    await actualizarCampana(db, props.pj.campaign_id, 'mesa_estado', valor => {
-      const cart = valor?.carritos?.[solicitud.de]
-      if (cart?.id !== solicitud.id || cart.ayudante !== props.pj.id || cart.estado !== 'comprando' ||
-          cart.total !== solicitud.monto || cart.sesion !== valor.tiendaVisible?.sesion || cart.tienda !== valor.tiendaVisible?.id)
-        throw new Error('El pedido cambió o la tienda cerró.')
-      cart.ayudante = null
-      if (aceptar) {
-        cart.patrocinador = props.pj.id
-        cart.estado = 'pagando'
-      } else cart.ayudaRechazadaPor = props.pj.id
-      return valor
-    })
+    const { error } = await db.rpc('dnd_responder_ayuda', { p_campana: props.pj.campaign_id, p_personaje: props.pj.id,
+      p_comprador: solicitud.de, p_pedido: solicitud.id, p_aceptar: aceptar })
+    if (error) throw error
+
     avisar(aceptar ? 'Ayuda autorizada. Falta que el DM apruebe el pedido.' : 'Solicitud rechazada.')
   } catch (e) { avisar(e.message, true) }
   finally { ocupado.value = false; void refrescar() }
@@ -120,12 +99,12 @@ async function responderAyuda(solicitud, aceptar) {
 onMounted(async () => {
   if (!props.pj.campaign_id || props.esNuevo) return
   canal = db.channel('mercado_' + props.pj.id).on('postgres_changes', {
-    event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${props.pj.campaign_id}`
+    event: 'UPDATE', schema: 'public', table: 'campana_publicada', filter: `id=eq.${props.pj.campaign_id}`
   }, refrescar).subscribe()
   timer = setInterval(refrescar, 2000)
   void refrescar()
-  const { data } = await db.from('characters').select('id,nombre_pj').eq('campaign_id', props.pj.campaign_id)
-    .or('tipo.eq.pj,tipo.is.null').neq('id', props.pj.id)
+  const { data } = await db.rpc('dnd_aliados', { p_campana: props.pj.campaign_id, p_personaje: props.pj.id })
+
   if (vigente) companeros.value = data || []
 })
 onBeforeUnmount(() => {
