@@ -20,10 +20,12 @@ button:disabled { opacity: .55; cursor: not-allowed; }
   background: #111115; border: 1px solid var(--borde); border-radius: 8px; color: #e2e8f0;
 }
 .aviso-partida {
+  pointer-events: none;
   position: fixed; bottom: max(16px, env(safe-area-inset-bottom)); left: 50%;
   transform: translateX(-50%); z-index: 1000001; max-width: min(34rem, calc(100vw - 24px));
   width: max-content; border-color: #b45309; box-shadow: 0 8px 32px #000a;
 }
+.aviso-partida button { pointer-events: auto; }
 .aviso-partida.error { border-color: #ef4444; }
 .estado-partida { position: relative; justify-content: center; flex-wrap: wrap; margin: 2rem auto; width: fit-content; }
 .estado-partida :is(button,a), .pedidos-mesa button { color: var(--ambar); border: 1px solid var(--borde); border-radius: 6px; padding: .45rem .75rem; }
