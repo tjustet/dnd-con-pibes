@@ -94,15 +94,13 @@ const cerrarImagen = () => { imagenAmpliada.value = false }
         </div>
         <div class="death-row">
           <span>ÉXITOS</span>
-          <input type="checkbox" :checked="pj.salvaciones_exito >= 1" @change="pj.salvaciones_exito = $event.target.checked ? 1 : 0" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_exito >= 2" @change="pj.salvaciones_exito = $event.target.checked ? 2 : pj.salvaciones_exito" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_exito >= 3" @change="pj.salvaciones_exito = $event.target.checked ? 3 : pj.salvaciones_exito" :disabled="!modoEdicion">
+          <input v-for="n in 3" :key="n" type="checkbox" :aria-label="'Éxito ' + n + ' de 3'"
+            :checked="pj.salvaciones_exito >= n" @change="pj.salvaciones_exito = $event.target.checked ? n : n - 1" :disabled="!modoEdicion">
         </div>
         <div class="death-row">
           <span>FALLOS</span>
-          <input type="checkbox" :checked="pj.salvaciones_fallo >= 1" @change="pj.salvaciones_fallo = $event.target.checked ? 1 : 0" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_fallo >= 2" @change="pj.salvaciones_fallo = $event.target.checked ? 2 : pj.salvaciones_fallo" :disabled="!modoEdicion">
-          <input type="checkbox" :checked="pj.salvaciones_fallo >= 3" @change="pj.salvaciones_fallo = $event.target.checked ? 3 : pj.salvaciones_fallo" :disabled="!modoEdicion">
+          <input v-for="n in 3" :key="n" type="checkbox" :aria-label="'Fallo ' + n + ' de 3'"
+            :checked="pj.salvaciones_fallo >= n" @change="pj.salvaciones_fallo = $event.target.checked ? n : n - 1" :disabled="!modoEdicion">
         </div>
       </div>
     </div>

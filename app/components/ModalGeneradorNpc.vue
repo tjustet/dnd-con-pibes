@@ -196,7 +196,7 @@ const afinidad = {
   'Gith(Githyanki)-Veterano': 8,
   'Gnomo(Marca de Escritura)-Cartógrafo': 9,
   'Gnomo(Marca de Escritura)-Escribano': 10,
-  'Gnomo(Profundo)-Joyero:': 9,
+  'Gnomo(Profundo)-Joyero': 9,
   'Gnomo(Roca)-Alquimista': 10,
   'Gnomo(Roca)-Joyero': 10,
   'Goblin-Agente': 8,
@@ -302,8 +302,8 @@ const mapearTiendaATrabajo = (tipo) => {
   if (t.includes('alfar')) return 'Alfarero'
   if (t.includes('mercado general')) return 'Mercader'
   if (t.includes('alquim')) return 'Alquimista'
-  if (t.includes('arcana') || t.includes('magia') || t.includes('pergamino')) return 'Mago'
   if (t.includes('biblioteca')) return 'Erudito'
+  if (t.includes('arcana') || t.includes('magia') || t.includes('pergamino')) return 'Mago'
   if (t.includes('adivin') || t.includes('oráculo')) return 'Oráculo'
   if (t.includes('taberna') || t.includes('cervecería') || t.includes('bodega')) return 'Tabernero'
   if (t.includes('posada')) return 'Posadero'
@@ -410,7 +410,7 @@ const procesarYGuardar = async () => {
       hp_max: form.value.hp_max,
       hp_actual: Math.min(props.npcEditando?.hp_actual ?? form.value.hp_max, form.value.hp_max), 
       clase_armadura: form.value.clase_armadura,
-      velocidad: parseInt(form.value.velocidad) || 30,
+      velocidad: form.value.velocidad === '' ? 30 : Number(form.value.velocidad ?? 30),
       notas: form.value.notas,
       ...(!props.npcEditando && { inventario: [] })
     }
@@ -424,15 +424,10 @@ const procesarYGuardar = async () => {
       if (error) return avisar("Error al guardar: " + error.message, true)
 
       if (form.value.tiendaDestino && !props.tiendaFijaId) {
-        const { data: local, error: errorLocal } = await supabase.from('tiendas_sesion').select('empleados')
-          .eq('campaign_id', props.campaignId).eq('id', form.value.tiendaDestino).single()
-        if (errorLocal) avisar('Se creó el NPC. No se pudo abrir el local para asignarlo.', true)
-        else {
-          const { error } = await supabase.from('tiendas_sesion').update({ empleados: [...new Set([...(local.empleados || []), data.id])] })
-            .eq('id', form.value.tiendaDestino).eq('campaign_id', props.campaignId).select('id').single()
-          if (error) avisar('Se creó el NPC, pero no se pudo asignar al local.', true)
-        }
+        try { await asignarEmpleado(supabase, form.value.tiendaDestino, data.id, true) }
+        catch { avisar('El NPC se guardó. Volvé a asignarlo desde el local.', true) }
       }
+
       emit('guardar-npc', data)
     }
   } finally { guardandoNpc.value = false }

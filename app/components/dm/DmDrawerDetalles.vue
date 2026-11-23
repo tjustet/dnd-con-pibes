@@ -17,7 +17,7 @@ const emit = defineEmits([
   'tirar-stat', 'tirar-ataque', 'tirar-dano', 'abrir-ficha', 'set-tooltip'
 ])
 
-const calcModStr = (val) => { const m = Math.floor((val - 10) / 2); return m >= 0 ? `+${m}` : `${m}` }
+const calcModStr = (val) => { const m = modificadorCaracteristica(val); return m >= 0 ? `+${m}` : `${m}` }
 </script>
 
 <template>

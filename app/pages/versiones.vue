@@ -3,6 +3,15 @@ useHead({ title: 'Historial de versiones' })
 const usuario = useSupabaseUser()
 const versiones = [
   {
+    numero: '0.4.1', fecha: '2026-11-22', fechaVisible: '22 de noviembre de 2026',
+    titulo: 'Correcciones de mesa y fichas',
+    cambios: [
+      'Las tiradas negativas ya no invierten el daño y la curación. Los ataques del director conservan sus efectos.',
+      'Podés desmarcar salvaciones de muerte y añadir un ataque u objeto mientras estás filtrando la lista.',
+      'El Atlas conserva las referencias de stock al ajustar cantidades y comprueba los cambios de personal.'
+    ]
+  },
+  {
     numero: '0.4.0', fecha: '2026-11-20', fechaVisible: '20 de noviembre de 2026',
     titulo: 'Dados tallados',
     cambios: [

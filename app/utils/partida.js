@@ -18,19 +18,28 @@ export function estadoInicial(estado = {}) {
 }
 
 // La condición sobre el JSON original evita pisar la edición concurrente de otro cliente.
-export async function actualizarCampana(db, id, campo, transformar) {
+async function actualizarJson(db, tabla, id, campo, transformar) {
   for (let intento = 0; intento < 5; intento++) {
-    const { data, error } = await db.from('campaigns').select(campo).eq('id', id).single()
+    const { data, error } = await db.from(tabla).select(campo).eq('id', id).single()
     if (error) throw error
     const anterior = data[campo]
     const siguiente = transformar(structuredClone(anterior))
-    let q = db.from('campaigns').update({ [campo]: siguiente }).eq('id', id)
+    let q = db.from(tabla).update({ [campo]: siguiente }).eq('id', id)
     q = anterior == null ? q.is(campo, null) : q.eq(campo, JSON.stringify(anterior))
     const respuesta = await q.select('id').maybeSingle()
     if (respuesta.error) throw respuesta.error
     if (respuesta.data) return siguiente
   }
   throw new Error('La mesa cambió durante el guardado. Reintentá la acción.')
+}
+
+export const actualizarCampana = (db, id, campo, transformar) => actualizarJson(db, 'campaigns', id, campo, transformar)
+
+export function asignarEmpleado(db, tienda, id, contratar) {
+  return actualizarJson(db, 'tiendas_sesion', tienda, 'empleados', previo => {
+    const ids = (Array.isArray(previo) ? previo : []).map(e => e?.id ?? e).filter(Boolean)
+    return contratar ? [...new Set([...ids, id])] : ids.filter(actual => actual !== id)
+  })
 }
 
 export function anotarTirada(db, id, tirada) {
