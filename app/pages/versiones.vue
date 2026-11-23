@@ -3,6 +3,14 @@ useHead({ title: 'Historial de versiones' })
 const usuario = useSupabaseUser()
 const versiones = [
   {
+    numero: '0.4.2', fecha: '2026-11-23', fechaVisible: '23 de noviembre de 2026',
+    titulo: 'Asentamientos del Atlas',
+    cambios: [
+      'El Atlas sugiere un nombre y sortea 4, 10, 20 o 35 locales según el tamaño del asentamiento.',
+      'Podés volver a sortear la propuesta, editarla y reintentar una fundación interrumpida desde el mismo formulario.'
+    ]
+  },
+  {
     numero: '0.4.1', fecha: '2026-11-22', fechaVisible: '22 de noviembre de 2026',
     titulo: 'Correcciones de mesa y fichas',
     cambios: [

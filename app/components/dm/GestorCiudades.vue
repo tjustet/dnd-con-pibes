@@ -20,7 +20,9 @@ const categoriasTiendasPlan = [
   "Alquimia", "Tienda Arcana", "Biblioteca Arcana", "Adivino / Oráculo",
   "Taberna", "Posada", "Panadería", "Carnicería", "Cervecería / Bodega",
   "Gremio de Aventureros", "Tienda de Suministros", "Cartógrafo", "Casa de Subastas",
-  "Establo", "Templo", "Monasterio", "Banco", "Baños Públicos", "Mercado Negro"
+  "Establo", "Templo", "Monasterio", "Banco", "Baños Públicos", "Mercado Negro",
+  "Armería", "Flechería", "Herboristería", "Librería", "Peletería", "Pescadería",
+  "Vidriería", "Frutería", "Cerería", "Tienda de Instrumentos", "Anticuario", "Curandero"
 ]
 
 const vista = ref('lista') 
@@ -77,22 +79,31 @@ const sugerenciaPrecio = computed(() => {
   return "Más de 5.000.000 pc (Legendario)"
 })
 
-const autoSeleccionarTiendas = () => {
-  tiendasSeleccionadasParaCrear.value = []
-  const maxSolicitado = tamanos.find(t => t.id === formCiudad.value.tamano).maxTiendas
-  const max = Math.min(maxSolicitado, categoriasTiendasPlan.length) // 🔒 nunca pedimos más de las que existen
-
-  let opcionesBase = ['Mercado General', 'Taberna', 'Herrería', 'Templo', 'Posada']
-  opcionesBase.forEach(t => { if(tiendasSeleccionadasParaCrear.value.length < max) tiendasSeleccionadasParaCrear.value.push(t) })
-
-  let intentos = 0
-  const maxIntentos = 500 // 🔒 segundo seguro anti-loop infinito
-
-  while(tiendasSeleccionadasParaCrear.value.length < max && intentos < maxIntentos) {
-    let r = categoriasTiendasPlan[Math.floor(Math.random() * categoriasTiendasPlan.length)]
-    if(!tiendasSeleccionadasParaCrear.value.includes(r)) tiendasSeleccionadasParaCrear.value.push(r)
-    intentos++
+const construyendo = ref(false)
+let intentoFundacion
+function sugerirNombre() {
+  const elegir = lista => lista[Math.floor(Math.random() * lista.length)]
+  formCiudad.value.nombre = elegir(['Puerto', 'Valle', 'Paso', 'Monte', 'Faro', 'Vado']) + ' ' +
+    elegir(['del Aliso', 'de la Luna', 'del Cuervo', 'de la Bruma', 'del Roble', 'del Alba', 'de las Brasas'])
+}
+function prepararFundacion() {
+  formCiudad.value = { nombre: '', tamano: 'pueblo', descripcion: '' }
+  sugerirNombre()
+  intentoFundacion = null
+  autoSeleccionarTiendas()
+  vista.value = 'crear'
+}
+function autoSeleccionarTiendas() {
+  const cantidad = tamanos.find(t => t.id === formCiudad.value.tamano).maxTiendas
+  const esenciales = ['Mercado General', 'Taberna', 'Herrería']
+  const opciones = categoriasTiendasPlan.filter(tipo => !esenciales.includes(tipo))
+  for (let i = opciones.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    const elegida = opciones[j]
+    opciones[j] = opciones[i]
+    opciones[i] = elegida
   }
+  tiendasSeleccionadasParaCrear.value = [...esenciales, ...opciones].slice(0, cantidad)
 }
 
 const cargarCiudades = async () => {
@@ -103,25 +114,34 @@ const cargarCiudades = async () => {
   if (data) ciudades.value = data
 }
 
-const crearCiudad = async () => {
-  if (!formCiudad.value.nombre) return avisar("Ponle un nombre al asentamiento.", true)
-  const { data: nuevaCiu, error } = await supabase.from('ciudades').insert([formCiudad.value]).select().single()
-  if (error) return avisar(error.message, true)
-
-  const tAInsertar = tiendasSeleccionadasParaCrear.value.map(tipo => ({
-    ciudad_id: nuevaCiu.id,
-    campaign_id: route.params.id || null,
-    nombre_personalizado: `${tipo} de ${nuevaCiu.nombre}`,
-    tipo: tipo,
-    inventario_actual: [], // Ahora guardará [{ item_id, cantidad, tabla }]
-    empleados: []
-  }))
-
-  if (tAInsertar.length) {
-    const { error: errorTiendas } = await supabase.from('tiendas_sesion').insert(tAInsertar)
-    if (errorTiendas) { avisar('La ciudad se creó, pero los locales no se pudieron crear.', true); vista.value = 'lista'; return cargarCiudades() }
-  }
-  vista.value = 'lista'; cargarCiudades()
+async function crearCiudad() {
+  if (construyendo.value) return
+  const nombre = formCiudad.value.nombre.trim()
+  if (!nombre) return avisar('Poné un nombre al asentamiento.', true)
+  const form = { ...formCiudad.value, nombre }
+  const tipos = [...tiendasSeleccionadasParaCrear.value]
+  const firma = JSON.stringify([route.params.id, form, tipos])
+  if (intentoFundacion && firma !== intentoFundacion.firma)
+    return avisar('Reintentá la fundación anterior con los mismos datos o volvé al Atlas para iniciar otra.', true)
+  intentoFundacion ??= { firma, id: idOperacion(), locales: tipos.map(() => idOperacion()) }
+  construyendo.value = true
+  try {
+    // Las dos escrituras del esquema anterior se pueden repetir tras un corte de red.
+    const { error } = await supabase.from('ciudades').upsert({ id: intentoFundacion.id, ...form },
+      { onConflict: 'id', ignoreDuplicates: true })
+    if (error) throw error
+    if (tipos.length) {
+      const locales = tipos.map((tipo, index) => ({ id: intentoFundacion.locales[index], ciudad_id: intentoFundacion.id,
+        campaign_id: route.params.id, tipo, nombre_personalizado: tipo + ' de ' + nombre, inventario_actual: [], empleados: [] }))
+      const { error: errorLocales } = await supabase.from('tiendas_sesion').upsert(locales, { onConflict: 'id', ignoreDuplicates: true })
+      if (errorLocales) throw errorLocales
+    }
+    vista.value = 'lista'
+    busquedaCiudad.value = ''
+    await cargarCiudades()
+    avisar(`${nombre} se fundó con ${tipos.length} locales.`)
+  } catch (e) { avisar('No se pudo confirmar toda la fundación. Podés reintentar con los mismos datos. ' + e.message, true) }
+  finally { construyendo.value = false }
 }
 
 const guardarCambiosCiudad = async () => {
@@ -346,8 +366,8 @@ onMounted(() => { cargarCiudades() })
       </h2>
       <div class="acciones-header">
         <button v-if="vista === 'lista'" class="btn-secundario" @click="router.push(`/campanas/${route.params.id}`)">← Campaña</button>
-        <button v-if="vista !== 'lista'" class="btn-secundario" @click="apertura++; vista = 'lista'">← Atlas</button>
-        <button v-if="vista === 'lista'" class="btn-dorado" @click="vista = 'crear'; autoSeleccionarTiendas()">+ Fundar Asentamiento</button>
+        <button v-if="vista !== 'lista'" class="btn-secundario" :disabled="construyendo" @click="apertura++; vista = 'lista'">← Atlas</button>
+        <button v-if="vista === 'lista'" class="btn-dorado" @click="prepararFundacion">+ Fundar Asentamiento</button>
       </div>
     </div>
 
@@ -369,18 +389,21 @@ onMounted(() => { cargarCiudades() })
     <div v-if="vista === 'crear'" class="vista-creacion">
       <div class="form-basico">
         <div class="input-group">
-          <label>Nombre del Lugar</label>
-          <input type="text" v-model="formCiudad.nombre" class="input-dm" />
+          <label for="atlas-nombre">Nombre del lugar</label>
+          <input id="atlas-nombre" maxlength="120" type="text" v-model="formCiudad.nombre" class="input-dm" />
+          <button type="button" class="sugerir-nombre" @click="sugerirNombre">Sugerir otro nombre</button>
         </div>
         <div class="input-group">
-          <label>Magnitud</label>
-          <select v-model="formCiudad.tamano" @change="autoSeleccionarTiendas" class="input-dm">
+          <label for="atlas-tamano">Tamaño</label>
+          <select id="atlas-tamano" v-model="formCiudad.tamano" @change="autoSeleccionarTiendas" class="input-dm">
             <option v-for="t in tamanos" :key="t.id" :value="t.id">{{ t.nombre }}</option>
           </select>
         </div>
       </div>
       <div class="selector-tiendas">
-        <h3>Locales recomendados (Borra o agrega)</h3>
+        <h3>Locales del asentamiento · {{ tiendasSeleccionadasParaCrear.length }}</h3>
+        <p class="ayuda-fundacion">Podés ajustar la selección antes de fundar. Después podés asignar empleados y mercadería a cada local.</p>
+        <button type="button" class="btn-secundario" @click="autoSeleccionarTiendas">Volver a sortear locales</button>
         <div class="grilla-categorias">
           <label v-for="l in categoriasTiendasPlan" :key="l" class="checkbox-lugar">
             <input type="checkbox" :value="l" v-model="tiendasSeleccionadasParaCrear" />
@@ -388,7 +411,7 @@ onMounted(() => { cargarCiudades() })
           </label>
         </div>
       </div>
-      <button class="btn-dorado gigante" @click="crearCiudad">Construir Asentamiento</button>
+      <button class="btn-dorado gigante" @click="crearCiudad" :disabled="construyendo">{{ construyendo ? 'Construyendo…' : 'Construir asentamiento' }}</button>
     </div>
 
     <div v-if="vista === 'ciudad-detalle' && ciudadActiva" class="vista-detalle-ciudad">
@@ -587,6 +610,9 @@ onMounted(() => { cargarCiudades() })
 </template>
 
 <style scoped>
+.sugerir-nombre { align-self: flex-start; color: #facc15; min-height: 36px; text-decoration: underline; text-underline-offset: .2em; }
+.ayuda-fundacion { color: #cbd5e1; margin: .5rem 0 1rem; }
+.selector-tiendas > button { margin-bottom: 1rem; }
 /* LOS ESTILOS SE MANTIENEN IGUAL QUE LA VEZ ANTERIOR PARA NO ROMPER TU DISEÑO, 
    SOLO AGREGUÉ CLASES PARA EL MODAL DE NUEVA TIENDA */
 .gestor-wrapper { padding: 20px; color: #e2e8f0; font-family: 'Inter', sans-serif; }
