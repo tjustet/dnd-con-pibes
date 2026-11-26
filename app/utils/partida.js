@@ -42,9 +42,10 @@ export function asignarEmpleado(db, tienda, id, contratar) {
   })
 }
 
-export function anotarTirada(db, id, tirada) {
-  return actualizarCampana(db, id, 'historial_dados', previo =>
-    [tirada, ...(Array.isArray(previo) ? previo : []).filter(t => t.id !== tirada.id)].slice(0, 30))
+export async function anotarTirada(db, id, tirada) {
+  const { data, error } = await db.rpc('dnd_registrar_tirada', { p_campana: id, p_tirada: tirada })
+  if (error) throw error
+  return data
 }
 
 export function idOperacion() {

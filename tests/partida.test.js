@@ -23,12 +23,17 @@ function campanas(fila) {
     return q
   }}
 }
-test('dos tiradas simultáneas y un reintento conservan un único registro por dado', async () => {
-  const fila = { historial_dados: null }, db=campanas(fila)
-  await Promise.all(['a','b'].map(id => anotarTirada(db,'mesa',{id})))
-  await anotarTirada(db,'mesa',{id:'a'})
-  assert.deepEqual(fila.historial_dados.map(t=>t.id),['a','b'])
+test('una tirada devuelve el historial confirmado y comunica el fallo al cliente', async () => {
+  const registro = { id: 'a', total: 12 }
+  const db = { rpc: async (nombre, args) => {
+    assert.equal(nombre, 'dnd_registrar_tirada')
+    assert.deepEqual(args, { p_campana: 'mesa', p_tirada: registro })
+    return { data: [registro] }
+  } }
+  assert.deepEqual(await anotarTirada(db, 'mesa', registro), [registro])
+  await assert.rejects(anotarTirada({ rpc: async () => ({ error: new Error('Falló el guardado') }) }, 'mesa', registro))
 })
+
 test('una venta y una proyección concurrentes conservan ambos campos', async () => {
   const fila = { mesa_estado: null }, db=campanas(fila)
   await Promise.all(['carritos','tiendaVisible'].map(k =>

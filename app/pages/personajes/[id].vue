@@ -66,6 +66,9 @@ watch([() => pj.value.hp_actual, () => pj.value.hp_max], ([newActual, newMax]) =
 
 const tipoFicha = computed(() => ({ npc: 'NPC', enemigo: 'enemigo' })[pj.value.tipo] || 'personaje')
 const volver = computed(() => pj.value.campaign_id && (esNuevo.value || esDirectorDeCampana.value) ? `/campanas/${pj.value.campaign_id}` : '/dashboard')
+const puedeEditar = computed(() => esNuevo.value || esDirectorDeCampana.value ||
+  (!!usuario.value?.email && pj.value.player_email?.toLowerCase() === usuario.value.email.toLowerCase()) ||
+  (!pj.value.campaign_id && pj.value.creador_id === (usuario.value?.sub || usuario.value?.id)))
 const cancelarEdicion = () => {
   if (esNuevo.value) return router.push(volver.value)
   cargarFicha()
@@ -93,17 +96,17 @@ const cargarFicha = async () => {
       modoEdicion.value = false 
       
       if (pj.value.campaign_id) {
-        const { data: campData } = await supabase.from('campaigns').select('dm_id, mesa_estado').eq('id', pj.value.campaign_id).single()
+        const { data: campData } = await supabase.from('campana_publicada').select('dm_id, entidad_visible').eq('id', pj.value.campaign_id).single()
         if (!montada) return
         const director = listaPerfiles.value.find(perfil => perfil.id === campData?.dm_id)
         esDirectorDeCampana.value = !!campData?.dm_id && (
           campData.dm_id === (usuario.value?.sub || usuario.value?.id) ||
           !!director?.email && director.email.toLowerCase() === usuario.value?.email?.toLowerCase()
         )
-        visionRevelada.value = campData?.mesa_estado?.entidadVisible ?? null
+        visionRevelada.value = campData?.entidad_visible ?? null
 
-        canalVision = supabase.channel('vision_jugador_' + pj.value.id).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${pj.value.campaign_id}` }, (payload) => {
-            if (payload.new.mesa_estado?.entidadVisible !== undefined) visionRevelada.value = payload.new.mesa_estado.entidadVisible
+        canalVision = supabase.channel('vision_jugador_' + pj.value.id).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campana_publicada', filter: `id=eq.${pj.value.campaign_id}` }, (payload) => {
+            if (payload.new.entidad_visible !== undefined) visionRevelada.value = payload.new.entidad_visible
         }).subscribe()
 
         canalPjSync = supabase.channel('pj_sync_' + pj.value.id).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'characters', filter: `id=eq.${pj.value.id}` }, (payload) => {
@@ -202,7 +205,7 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
       </div>
     </div>
 
-    <MesaDados v-if="!cargando && !esNuevo && pj.campaign_id" ref="mesaRef" :jugador="pj.nombre_pj" :campana-id="pj.campaign_id" />
+    <MesaDados v-if="!cargando && !esNuevo && pj.campaign_id && puedeEditar" ref="mesaRef" :jugador="pj.nombre_pj" :campana-id="pj.campaign_id" />
 
     <div v-if="cargando" class="cargando">Abriendo grimorio...</div>
     
@@ -217,7 +220,7 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
           <button v-if="esNuevo && pj.tipo === 'npc'" type="button" @click="mostrandoGeneradorInteligente = true">Generar NPC por oficio</button>
           <button v-if="modoEdicion" type="button" @click="cancelarEdicion">Cancelar</button>
           <button v-if="modoEdicion" type="button" class="principal" @click="preGuardarFicha">{{ esNuevo ? 'Crear ' + tipoFicha : 'Guardar cambios' }}</button>
-          <button v-else type="button" class="principal" @click="modoEdicion = true">Editar ficha</button>
+          <button v-else-if="puedeEditar" type="button" class="principal" @click="modoEdicion = true">Editar ficha</button>
         </div>
       </header>
 
@@ -226,7 +229,7 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
         <a href="#ataques">Ataques</a><a href="#inventario">Inventario</a>
       </nav>
       <div class="layout-maestro">
-        <FichaDatosPrincipales :pj="pj" :modoEdicion="modoEdicion" :listaPerfiles="listaPerfiles" />
+        <FichaDatosPrincipales :pj="pj" :modoEdicion="modoEdicion" :listaPerfiles="listaPerfiles" :puedeVincular="esDirectorDeCampana || esNuevo || !pj.campaign_id" />
         <FichaCaracteristicas id="caracteristicas" :pj="pj" :modoEdicion="modoEdicion" @lanzar-dado="procesarTiradaDado" />
 
         <div class="grilla-detalles">
@@ -237,7 +240,7 @@ onUnmounted(() => { montada = false; if (canalVision) supabase.removeChannel(can
       </div>
     </div>
 
-    <MercadoJugador v-if="!cargando && pj.id && pj.tipo === 'pj'" :pj="pj" :es-nuevo="esNuevo" />
+    <MercadoJugador v-if="!cargando && puedeEditar && pj.id && pj.tipo === 'pj'" :pj="pj" :es-nuevo="esNuevo" />
   </div>
 
   <div v-if="modalComunidadAbierto" class="modal-overlay">

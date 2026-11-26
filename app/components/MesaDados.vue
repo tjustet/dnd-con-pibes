@@ -30,7 +30,7 @@ const conectarMesa = async () => {
   if (!props.campanaId) return
 
   // Traer historial actual
-  const { data } = await supabase.from('campaigns').select('historial_dados').eq('id', props.campanaId).single()
+  const { data } = await supabase.from('campana_publicada').select('historial_dados').eq('id', props.campanaId).single()
   if (data && data.historial_dados) {
     historialCompartido.value = data.historial_dados.filter(h => !h.oculto)
   }
@@ -38,7 +38,7 @@ const conectarMesa = async () => {
   // Escuchar en tiempo real
   if (!montado) return
   canalMesa = supabase.channel('jugador_dados_' + props.jugador)
-    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${props.campanaId}` }, (payload) => {
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campana_publicada', filter: `id=eq.${props.campanaId}` }, (payload) => {
       if (payload.new.historial_dados) {
         historialCompartido.value = payload.new.historial_dados.filter(h => !h.oculto)
         scrollearAbajo()

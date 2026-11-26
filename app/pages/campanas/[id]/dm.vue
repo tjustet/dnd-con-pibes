@@ -207,7 +207,7 @@ const cargarMesaDM = async () => {
     campana.value = cData
     estadoMesa.value = estadoInicial(cData.mesa_estado)
     ultimaMesa = JSON.parse(JSON.stringify(estadoMesa.value))
-    if (cData.historial_dados) historialCompartido.value = cData.historial_dados
+    if (cData.historial_dm) historialCompartido.value = cData.historial_dm
   }
 
   const { data: pData } = await supabase.from('characters').select('*').eq('campaign_id', route.params.id)
@@ -223,7 +223,7 @@ const cargarMesaDM = async () => {
   canalMesa = supabase.channel('mesa_compartida_' + campaignId)
     .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'campaigns', filter: `id=eq.${route.params.id}` }, (payload) => {
       estadoMesa.value.carritos = payload.new.mesa_estado?.carritos || {}
-      if (payload.new.historial_dados) historialCompartido.value = payload.new.historial_dados
+      if (payload.new.historial_dm) historialCompartido.value = payload.new.historial_dm
     }).subscribe()
 
   canalPersonajes = supabase.channel('personajes_realtime_' + campaignId)
@@ -328,7 +328,7 @@ const agregarEfectoDesdeObj = (entidad, tipo, objEfecto) => {
 
 const limpiarHistorialGlobal = async () => {
   if(confirm("¿Estás seguro de querer borrar todo el registro de dados de esta sesión?")) {
-    const { error } = await supabase.from('campaigns').update({ historial_dados: [] }).eq('id', campaignId).select('id').single()
+    const { error } = await supabase.from('campaigns').update({ historial_dados: [], historial_dm: [] }).eq('id', campaignId).select('id').single()
     if (error) return avisar('No se pudo borrar el historial.', true)
     historialCompartido.value = []
   }

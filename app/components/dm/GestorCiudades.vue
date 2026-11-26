@@ -108,7 +108,7 @@ function autoSeleccionarTiendas() {
 
 const cargarCiudades = async () => {
   buscandoCiudades.value = true
-  const { data, error } = await supabase.from('ciudades').select('id, nombre, tamano, descripcion').order('nombre')
+  const { data, error } = await supabase.from('ciudades').select('id, nombre, tamano, descripcion').eq('campaign_id', route.params.id).order('nombre')
   buscandoCiudades.value = false
   errorCiudades.value = Boolean(error)
   if (data) ciudades.value = data
@@ -118,41 +118,31 @@ async function crearCiudad() {
   if (construyendo.value) return
   const nombre = formCiudad.value.nombre.trim()
   if (!nombre) return avisar('Poné un nombre al asentamiento.', true)
-  const form = { ...formCiudad.value, nombre }
-  const tipos = [...tiendasSeleccionadasParaCrear.value]
-  const firma = JSON.stringify([route.params.id, form, tipos])
-  if (intentoFundacion && firma !== intentoFundacion.firma)
-    return avisar('Reintentá la fundación anterior con los mismos datos o volvé al Atlas para iniciar otra.', true)
-  intentoFundacion ??= { firma, id: idOperacion(), locales: tipos.map(() => idOperacion()) }
+  const parametros = { p_campana: route.params.id, p_nombre: nombre, p_tamano: formCiudad.value.tamano,
+    p_descripcion: formCiudad.value.descripcion.trim(), p_tipos: [...tiendasSeleccionadasParaCrear.value] }
+  const firma = JSON.stringify(parametros)
+  if (firma !== intentoFundacion?.firma) intentoFundacion = { firma, id: idOperacion() }
   construyendo.value = true
   try {
-    // Las dos escrituras del esquema anterior se pueden repetir tras un corte de red.
-    const { error } = await supabase.from('ciudades').upsert({ id: intentoFundacion.id, ...form },
-      { onConflict: 'id', ignoreDuplicates: true })
+    const { error } = await supabase.rpc('dnd_fundar_ciudad', { ...parametros, p_id: intentoFundacion.id })
     if (error) throw error
-    if (tipos.length) {
-      const locales = tipos.map((tipo, index) => ({ id: intentoFundacion.locales[index], ciudad_id: intentoFundacion.id,
-        campaign_id: route.params.id, tipo, nombre_personalizado: tipo + ' de ' + nombre, inventario_actual: [], empleados: [] }))
-      const { error: errorLocales } = await supabase.from('tiendas_sesion').upsert(locales, { onConflict: 'id', ignoreDuplicates: true })
-      if (errorLocales) throw errorLocales
-    }
     vista.value = 'lista'
     busquedaCiudad.value = ''
     await cargarCiudades()
-    avisar(`${nombre} se fundó con ${tipos.length} locales.`)
-  } catch (e) { avisar('No se pudo confirmar toda la fundación. Podés reintentar con los mismos datos. ' + e.message, true) }
+    avisar(`${nombre} se fundó con ${parametros.p_tipos.length} locales.`)
+  } catch (e) { avisar('No se pudo confirmar la fundación. ' + e.message, true) }
   finally { construyendo.value = false }
 }
 
 const guardarCambiosCiudad = async () => {
-  const { error } = await supabase.from('ciudades').update({ nombre: ciudadActiva.value.nombre, descripcion: ciudadActiva.value.descripcion }).eq('id', ciudadActiva.value.id)
+  const { error } = await supabase.from('ciudades').update({ nombre: ciudadActiva.value.nombre, descripcion: ciudadActiva.value.descripcion }).eq('id', ciudadActiva.value.id).select('id').single()
   if (error) return avisar(error.message, true)
   avisar('Asentamiento guardado.')
 }
 
 const borrarCiudad = async (id) => {
   if(confirm("¿Estás seguro de borrar este asentamiento entero con sus comercios?")) {
-    const { error } = await supabase.from('ciudades').delete().eq('id', id)
+    const { error } = await supabase.from('ciudades').delete().eq('id', id).select('id').single()
     if (error) return avisar(error.message, true)
     vista.value = 'lista'; cargarCiudades()
   }
@@ -366,7 +356,7 @@ onMounted(() => { cargarCiudades() })
       </h2>
       <div class="acciones-header">
         <button v-if="vista === 'lista'" class="btn-secundario" @click="router.push(`/campanas/${route.params.id}`)">← Campaña</button>
-        <button v-if="vista !== 'lista'" class="btn-secundario" :disabled="construyendo" @click="apertura++; vista = 'lista'">← Atlas</button>
+        <button v-if="vista !== 'lista'" class="btn-secundario" @click="apertura++; vista = 'lista'" :disabled="construyendo">← Atlas</button>
         <button v-if="vista === 'lista'" class="btn-dorado" @click="prepararFundacion">+ Fundar Asentamiento</button>
       </div>
     </div>
@@ -402,7 +392,7 @@ onMounted(() => { cargarCiudades() })
       </div>
       <div class="selector-tiendas">
         <h3>Locales del asentamiento · {{ tiendasSeleccionadasParaCrear.length }}</h3>
-        <p class="ayuda-fundacion">Podés ajustar la selección antes de fundar. Después podés asignar empleados y mercadería a cada local.</p>
+        <p class="ayuda-fundacion">Podés ajustar la selección. Cada comercio recibe artículos de su rubro si están disponibles en el catálogo.</p>
         <button type="button" class="btn-secundario" @click="autoSeleccionarTiendas">Volver a sortear locales</button>
         <div class="grilla-categorias">
           <label v-for="l in categoriasTiendasPlan" :key="l" class="checkbox-lugar">

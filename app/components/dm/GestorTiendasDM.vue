@@ -41,7 +41,7 @@ const tiendasFiltradas = computed(() => {
 
 // --- MÉTODOS DE BASE DE DATOS ---
 const inicializarComercio = async () => {
-  const { data: ciu } = await supabase.from('ciudades').select('*').order('nombre')
+  const { data: ciu } = await supabase.from('ciudades').select('*').eq('campaign_id', props.campaignId).order('nombre')
   if (ciu) {
     ciudades.value = ciu
     if (ciu.length > 0) {

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 
 const props = defineProps({
   pj: { type: Object, required: true },
+  puedeVincular: Boolean,
   modoEdicion: { type: Boolean, default: false },
   listaPerfiles: { type: Array, default: () => [] }
 })
@@ -52,7 +53,7 @@ const cerrarImagen = () => { imagenAmpliada.value = false }
         <div class="tag"><label>RAZA</label><input v-if="modoEdicion" v-model="pj.raza" class="input-base" /><span v-else>{{ pj.raza || '-' }}</span></div>
         <div class="tag"><label>ALINEAMIENTO</label><input v-if="modoEdicion" v-model="pj.alineamiento" class="input-base" /><span v-else>{{ pj.alineamiento || '-' }}</span></div>
         <div class="tag"><label>{{ pj.tipo === 'pj' ? 'XP' : 'XP (OTORGA)' }}</label><input v-if="modoEdicion" type="number" v-model="pj.xp" class="input-base" /><span v-else>{{ pj.xp || 0 }}</span></div>
-        <div v-if="modoEdicion && pj.tipo === 'pj'" class="tag selector-email-container">
+        <div v-if="modoEdicion && puedeVincular && pj.tipo === 'pj'" class="tag selector-email-container">
           <label>VINCULAR JUGADOR (EMAIL)</label>
           <select v-model="pj.player_email" class="select-dark">
             <option value="">-- Dejar sin asignar --</option>
